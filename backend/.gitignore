@@ -1,0 +1,9 @@
+litinerary.db
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
