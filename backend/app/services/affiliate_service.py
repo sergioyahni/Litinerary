@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.provider_guards import require_external_call_allowed
 from app.services.affiliate_types import (
     AffiliateProduct,
     AffiliateProductRequest,
@@ -87,6 +88,17 @@ def validate_affiliate_startup(settings=None) -> None:
         return
     if resolved.affiliate_provider == "mock":
         return
+    require_external_call_allowed(
+        provider_name=resolved.affiliate_provider,
+        provider_type=ProviderType.AFFILIATE,
+        feature_flag_name="ENABLE_AFFILIATE_LINKS",
+        feature_enabled=resolved.enable_affiliate_links,
+        required_config={
+            "AFFILIATE_API_KEY": resolved.affiliate_api_key,
+            "AFFILIATE_BASE_URL": resolved.affiliate_base_url,
+        },
+        settings=resolved,
+    )
     missing = []
     if not resolved.affiliate_api_key:
         missing.append("AFFILIATE_API_KEY")

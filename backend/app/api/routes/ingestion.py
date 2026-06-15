@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.guards import require_admin_routes
+from app.core.guards import require_admin_routes, require_admin_user_when_auth_enabled
 from app.schemas.ingestion import (
     BookIngestionJob,
     BookIngestionJobCreate,
@@ -14,7 +14,7 @@ from app.services.ingestion_service import ingestion_service
 router = APIRouter(
     prefix="/api/admin/ingestion",
     tags=["admin", "development", "book-ingestion"],
-    dependencies=[Depends(require_admin_routes)],
+    dependencies=[Depends(require_admin_routes), Depends(require_admin_user_when_auth_enabled)],
 )
 
 

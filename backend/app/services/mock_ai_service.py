@@ -1,6 +1,8 @@
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.observability import record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.data.mock_data import MOCK_CREATED_AT
 from app.schemas.domain import (
     Book,
@@ -418,6 +420,11 @@ def get_ai_pipeline() -> MockAIServicePipeline:
             f"Real LLM provider '{settings.ai_provider}' is disabled by ENABLE_REAL_LLM."
         )
     if settings.ai_provider == "openai_compatible":
+        record_provider_selection(
+            provider_type=ProviderType.LLM.value,
+            provider_name="openai_compatible",
+            mode="real",
+        )
         validate_llm_startup(settings)
         from app.services.openai_compatible_llm_adapter import (
             OpenAICompatibleAIPipeline,
@@ -440,6 +447,11 @@ def get_ai_pipeline() -> MockAIServicePipeline:
         raise RuntimeError(
             f"AI provider '{settings.ai_provider}' is configured but not implemented."
         )
+    record_provider_selection(
+        provider_type=ProviderType.LLM.value,
+        provider_name="fake",
+        mode="mock",
+    )
     return MockAIServicePipeline()
 
 
@@ -447,15 +459,26 @@ def validate_llm_startup(settings=None) -> None:
     resolved = settings or get_settings()
     if not resolved.enable_real_llm:
         return
-    if resolved.app_env == "test":
-        raise RuntimeError("Real LLM provider must not be enabled during standard test runs.")
     if resolved.ai_provider != "openai_compatible":
         raise RuntimeError(
             "Real LLM is enabled but only the OpenAI-compatible adapter boundary is "
             "implemented. Set LLM_PROVIDER=openai_compatible or disable ENABLE_REAL_LLM."
         )
+    require_external_call_allowed(
+        provider_name="openai_compatible",
+        provider_type=ProviderType.LLM,
+        feature_flag_name="ENABLE_REAL_LLM",
+        feature_enabled=resolved.enable_real_llm,
+        required_config={
+            "LLM_API_KEY": resolved.llm_api_key,
+            "LLM_MODEL_NAME": resolved.llm_model_name,
+        },
+        allowed_environments=resolved.llm_allowed_environments,
+        settings=resolved,
+    )
     missing = []
-    if resolved.app_env not in resolved.llm_allowed_environments:
+    integration_test_mode = resolved.app_env == "test" and resolved.enable_integration_tests
+    if not integration_test_mode and resolved.app_env not in resolved.llm_allowed_environments:
         missing.append("APP_ENV is not listed in LLM_ALLOWED_ENVIRONMENTS")
     if not resolved.llm_api_key:
         missing.append("LLM_API_KEY")

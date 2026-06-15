@@ -7,6 +7,8 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import NAMESPACE_URL, uuid5
 
+from app.core.config import get_settings
+from app.core.provider_guards import require_external_call_allowed
 from app.services.provider_contracts import (
     ProviderError,
     ProviderErrorCode,
@@ -47,6 +49,15 @@ class QdrantHttpTransport:
         path: str,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        settings = get_settings()
+        require_external_call_allowed(
+            provider_name="qdrant",
+            provider_type=ProviderType.VECTOR_DB,
+            feature_flag_name="ENABLE_REAL_VECTOR_DB",
+            feature_enabled=settings.enable_real_vector_db,
+            required_config={"QDRANT_URL or VECTOR_DB_URL": self.settings.url},
+            settings=settings,
+        )
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"Content-Type": "application/json"}
         if self.settings.api_key:

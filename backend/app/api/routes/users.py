@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from fastapi import HTTPException, status
 
-from app.core.auth import CurrentUser, optional_current_user, require_user_feature_access
+from app.core.auth import (
+    CurrentUser,
+    optional_current_user,
+    require_current_user,
+    require_user_feature_access,
+)
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.guards import require_debug_routes
@@ -25,11 +30,21 @@ from app.services.user_repository import (
     list_reviews,
     remove_bookmark,
     save_review,
+    sync_user_from_current_user,
     upsert_preference,
 )
 
 
 router = APIRouter(prefix="/api/users", tags=["users"])
+me_router = APIRouter(prefix="/api", tags=["users"])
+
+
+@me_router.get("/me", response_model=UserProfile)
+def get_current_user_profile(
+    current_user: CurrentUser = Depends(require_current_user),
+    db: Session = Depends(get_db),
+) -> UserProfile:
+    return sync_user_from_current_user(db, current_user)
 
 
 @router.post("", response_model=UserProfile, status_code=201)

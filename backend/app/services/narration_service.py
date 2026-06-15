@@ -1,6 +1,8 @@
 from functools import lru_cache
 
 from app.core.config import Settings, get_settings
+from app.core.observability import record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.schemas.domain import Itinerary
 from app.schemas.narration import (
     AudioMetadataResponse,
@@ -21,6 +23,7 @@ from app.services.provider_contracts import (
     ProviderMetadata,
     ProviderType,
 )
+from app.services.usage_policy import get_usage_guard
 
 
 MOCK_TTS_PROVIDER_NAME = "mock_tts"
@@ -34,6 +37,7 @@ class MockNarrationService:
                 voice_style=request.voiceStyle,
             )
         )
+        get_usage_guard().guard_tts_narration(text=script.text)
         audio = self.synthesize(
             TextToSpeechRequest(
                 itinerary_id=itinerary.id,
@@ -110,6 +114,14 @@ def get_narration_service() -> MockNarrationService:
     settings = get_settings()
     if settings.tts_provider not in {"mock", "fake", "none"}:
         if settings.enable_real_tts:
+            require_external_call_allowed(
+                provider_name=settings.tts_provider,
+                provider_type=ProviderType.TTS,
+                feature_flag_name="ENABLE_REAL_TTS",
+                feature_enabled=settings.enable_real_tts,
+                required_config={"TTS_API_KEY or TEXT_TO_SPEECH_API_KEY": settings.tts_api_key},
+                settings=settings,
+            )
             raise ProviderError(
                 ProviderErrorCode.REAL_PROVIDER_DISABLED,
                 (
@@ -125,6 +137,11 @@ def get_narration_service() -> MockNarrationService:
             "TTS_PROVIDER is non-mock but ENABLE_REAL_TTS is false; "
             "mock_tts remains the only available narration provider."
         )
+    record_provider_selection(
+        provider_type=ProviderType.TTS.value,
+        provider_name=MOCK_TTS_PROVIDER_NAME,
+        mode="mock",
+    )
     return MockNarrationService()
 
 
@@ -165,6 +182,17 @@ def build_itinerary_narration(
 def validate_tts_startup(settings: Settings) -> list[str]:
     notes: list[str] = []
     if settings.enable_real_tts:
+        try:
+            require_external_call_allowed(
+                provider_name=settings.tts_provider,
+                provider_type=ProviderType.TTS,
+                feature_flag_name="ENABLE_REAL_TTS",
+                feature_enabled=settings.enable_real_tts,
+                required_config={"TTS_API_KEY or TEXT_TO_SPEECH_API_KEY": settings.tts_api_key},
+                settings=settings,
+            )
+        except ProviderError as exc:
+            notes.append(exc.message)
         notes.append(
             "ENABLE_REAL_TTS=true is configured, but no real TTS adapter is implemented; "
             "mock narration remains the only safe provider."

@@ -27,6 +27,7 @@ from app.services.mock_ai_service import MOCK_LLM_METADATA, get_ai_pipeline
 from app.services.mock_repository import get_itinerary
 from app.services.provider_contracts import utc_now_iso
 from app.services.routing_service import enrich_itinerary_routes
+from app.services.usage_policy import get_usage_guard
 
 
 def create_chat_session(
@@ -93,6 +94,7 @@ def add_chat_message(
     session_id: str,
     request: ChatMessageCreate,
 ) -> ChatMessageResponse:
+    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     session = _load_session(db, session_id, user.id)
     now = utc_now_iso()
     user_message = ChatMessageModel(
@@ -134,6 +136,7 @@ def refine_itinerary_from_chat(
     session_id: str,
     request: ChatItineraryRefinementRequest,
 ) -> ChatItineraryRefinementResponse:
+    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     session = _load_session(db, session_id, user.id)
     source = get_itinerary(request.sourceItineraryId, db=db)
     generation_request = ItineraryGenerationRequest(

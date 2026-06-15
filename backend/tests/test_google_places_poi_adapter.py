@@ -59,6 +59,8 @@ def test_google_adapter_selection_requires_real_provider_flag(monkeypatch) -> No
 
 def test_google_adapter_selection_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_POI_PROVIDER", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.setenv("POI_PROVIDER", "google_places")
     monkeypatch.setenv("GOOGLE_PLACES_API_KEY", "test-key")
 
@@ -69,12 +71,13 @@ def test_google_adapter_selection_when_enabled(monkeypatch) -> None:
 
 def test_missing_google_config_fails_clearly_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_POI_PROVIDER", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("POI_PROVIDER", "google_places")
     monkeypatch.delenv("GOOGLE_PLACES_API_KEY", raising=False)
     monkeypatch.delenv("POI_PROVIDER_API_KEY", raising=False)
     monkeypatch.delenv("POI_VERIFICATION_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="configuration is incomplete"):
+    with pytest.raises(ProviderError, match="GOOGLE_PLACES_API_KEY"):
         validate_poi_provider_startup()
 
 

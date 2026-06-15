@@ -1,6 +1,8 @@
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.observability import record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.schemas.domain import Book, Itinerary, POI
 from app.schemas.users import UserPreference, UserReview
 from app.services.fake_vector_store import (
@@ -17,6 +19,7 @@ from app.services.vector_types import (
     VectorStore,
 )
 from app.services.provider_contracts import ProviderMetadata, ProviderType
+from app.services.usage_policy import get_usage_guard
 
 
 class VectorService:
@@ -31,17 +34,19 @@ class VectorService:
         text: str,
         metadata: dict[str, str | int | float | bool | None] | None = None,
     ) -> VectorRecord:
+        get_usage_guard().guard_vector_upsert(text=text)
+        embedding = self.embedder.embed(text)
         record = VectorRecord(
             id=vector_id,
             collection=collection,
-            embedding=self.embedder.embed(text),
+            embedding=embedding,
             metadata=metadata or {},
             text=text,
             provider_metadata=ProviderMetadata.mock(
                 provider_name=getattr(self.embedder, "provider_name", "unknown_embedding"),
                 provider_type=ProviderType.EMBEDDING,
                 model_name=getattr(self.embedder, "model_name", None),
-                embedding_dimension=len(self.embedder.embed(text)),
+                embedding_dimension=len(embedding),
                 warnings=["Fake/local embedding; no external vector provider call was made."],
             ),
         )
@@ -58,6 +63,7 @@ class VectorService:
         limit: int = 5,
         metadata_filter: dict[str, object] | None = None,
     ) -> list[VectorSearchResult]:
+        get_usage_guard().guard_vector_search(limit=limit)
         return self.store.search(
             collection=collection,
             embedding=self.embedder.embed(query),
@@ -89,6 +95,11 @@ def get_vector_service() -> VectorService:
             f"Real Vector DB provider '{settings.vector_provider}' is disabled by ENABLE_REAL_VECTOR_DB."
         )
     if settings.vector_provider == "qdrant":
+        record_provider_selection(
+            provider_type=ProviderType.VECTOR_DB.value,
+            provider_name="qdrant",
+            mode="real",
+        )
         validate_vector_startup(settings)
         return VectorService(
             embedder=FakeEmbeddingProvider(dimension=settings.vector_dimension),
@@ -114,6 +125,11 @@ def get_vector_service() -> VectorService:
         else InMemoryVectorStore()
     )
 
+    record_provider_selection(
+        provider_type=ProviderType.VECTOR_DB.value,
+        provider_name="fake",
+        mode="mock",
+    )
     return VectorService(
         embedder=FakeEmbeddingProvider(dimension=settings.vector_dimension),
         store=store,
@@ -129,6 +145,14 @@ def validate_vector_startup(settings=None) -> None:
             "Real Vector DB is enabled but only the Qdrant adapter boundary is implemented. "
             "Set VECTOR_DB_PROVIDER=qdrant or disable ENABLE_REAL_VECTOR_DB."
         )
+    require_external_call_allowed(
+        provider_name="qdrant",
+        provider_type=ProviderType.VECTOR_DB,
+        feature_flag_name="ENABLE_REAL_VECTOR_DB",
+        feature_enabled=resolved.enable_real_vector_db,
+        required_config={"QDRANT_URL or VECTOR_DB_URL": resolved.qdrant_url},
+        settings=resolved,
+    )
     missing = []
     if not resolved.qdrant_url:
         missing.append("QDRANT_URL or VECTOR_DB_URL")

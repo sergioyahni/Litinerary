@@ -58,9 +58,31 @@ Production expectations:
 - Leave `ENABLE_DEBUG_ROUTES=false`.
 - Leave `ENABLE_MOCK_SERVICES=false` unless intentionally running a protected mock environment.
 - Leave all `ENABLE_REAL_*` provider flags disabled until the matching adapter contract tests, cost controls, secrets, and monitoring are in place.
-- Leave `ENABLE_AUTH=false` until a real provider is configured. When enabling auth, configure `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, and `AUTH_JWT_ALGORITHMS`.
+- Leave `ENABLE_AUTH=false` until a real provider is configured. When enabling auth, configure `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`.
 - Never use `AUTH_PROVIDER=dev` as production authentication.
 - Keep provider credentials out of the repository.
+
+Beta/staging dry-run expectations:
+
+- Set `APP_ENV=beta` or `APP_ENV=staging`.
+- Set `DEBUG=false`.
+- Set `ENABLE_ADMIN_ROUTES=false` and `ENABLE_DEBUG_ROUTES=false`.
+- Keep `ENABLE_MOCK_SERVICES=true` for the current mock-only beta dry run.
+- Keep all real provider flags and `ALLOW_EXTERNAL_CALLS` disabled.
+- Use exact `CORS_ALLOWED_ORIGINS`.
+- Keep provider credentials empty unless a future live integration gate explicitly approves them.
+
+Validate beta configuration from this directory:
+
+```powershell
+..\venv\Scripts\python.exe -m scripts.validate_beta_config --profile beta
+```
+
+Run the full repository dry run from the project root:
+
+```powershell
+.\scripts\beta_dry_run.ps1
+```
 
 Provider placeholder variables exist for future integrations but do not connect real services yet:
 
@@ -74,9 +96,11 @@ Auth foundation variables:
 
 - `ENABLE_AUTH`: enables the backend auth boundary.
 - `AUTH_REQUIRED_FOR_USER_FEATURES`: requires auth for profile, preferences, bookmarks, reviews, and mock recommendations.
-- `AUTH_PROVIDER`: currently only `dev` is implemented for local/test tokens.
-- `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`: reserved for future managed-provider JWT validation.
-- `AUTH_ALLOW_DEV_USER_FALLBACK`: allows missing-token fallback to `dev-reader` only in development/test.
+- `AUTH_PROVIDER`: `dev` for local/test tokens, or a provider label such as `oidc` for managed JWT validation.
+- `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`: required for managed-provider JWT validation.
+- `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`: required for managed-provider signature validation.
+- Claim mapping: `AUTH_USER_ID_CLAIM`, `AUTH_ROLES_CLAIM`, `AUTH_SUBSCRIPTION_CLAIM`, `AUTH_EMAIL_CLAIM`, and `AUTH_DISPLAY_NAME_CLAIM`.
+- `AUTH_ALLOW_DEV_USER_FALLBACK`: allows missing-token fallback to `dev-reader` only in development/test; deployed environments reject it.
 
 Local/test mock token format:
 
@@ -141,9 +165,9 @@ Provider contracts and production-readiness gates are documented in `..\docs\pro
 
 Known limitations documented by tests:
 
-- A provider-neutral auth foundation exists behind feature flags, but only local/test development tokens are implemented.
+- A provider-neutral auth foundation exists behind feature flags, including local/test tokens and managed JWT validation with mocked JWKS tests. No real provider is selected or connected in committed config.
 - User endpoints such as `/api/users/{user_id}/preferences` can require current-user checks when `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`.
-- Admin/development endpoints use config guards today; future production deployments still need authenticated admin role checks.
+- Admin/development endpoints use config guards and require authenticated admin/developer identity when auth is enabled.
 - The mock recommendation route is a debug route and must remain disabled outside intentional development/test use.
 
 Seed export/import uses a JSON payload with `destinations`, `books`, `pois`, and `itineraries`. Validation checks required destination/book/POI text fields, valid book-to-destination links, POI destination/book links, itinerary city/book relationships, supported transportation modes, ordered day stops, stop-to-POI references, and required map coordinates.
@@ -336,7 +360,7 @@ The Phase 2 account foundation is intentionally simple. Users are identified by 
 - `POST /api/users/{user_id}/reviews`
 - `GET /api/users/{user_id}/reviews`
 
-This supports profile records, preferences, itinerary bookmarks, and reviews. A feature-flagged auth boundary can protect these routes in local/test mode, but there are no passwords, sessions, OAuth providers, managed-provider JWT validation, or account recovery flows yet. Anonymous destination/book browsing and itinerary generation remain available.
+This supports profile records, preferences, itinerary bookmarks, and reviews. A feature-flagged auth boundary can protect these routes with local/test tokens or managed JWT validation. `GET /api/me` syncs the current bearer-token subject to a local user profile. There are no passwords, sessions, OAuth UI, provider SDK integration, or account recovery flows yet. Anonymous destination/book browsing and itinerary generation remain available.
 
 ## Vector Service Foundation
 
@@ -383,4 +407,4 @@ This route requires `ENABLE_DEBUG_ROUTES=true` and fake vector services require 
 
 This is only a Phase 2 foundation: no OpenAI, Pinecone, Qdrant, Milvus, or external embedding/vector service is called.
 
-No production ticketing, payment, e-commerce, or managed authentication provider integrations are implemented yet. OpenAI-compatible LLM, Qdrant, Google Places, and OpenRouteService adapter boundaries exist behind feature flags, but local development and standard tests continue to use fake/mock providers by default.
+No production ticketing, payment, e-commerce, or live managed authentication provider configuration is implemented yet. OpenAI-compatible LLM, Qdrant, Google Places, OpenRouteService, and managed-JWT auth boundaries exist behind feature flags, but local development and standard tests continue to use fake/mock providers by default.

@@ -69,6 +69,7 @@ def test_openai_compatible_selection_requires_real_llm_flag(monkeypatch) -> None
 
 def test_openai_compatible_selection_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_LLM", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "development")
@@ -80,20 +81,22 @@ def test_openai_compatible_selection_when_enabled(monkeypatch) -> None:
 
 def test_missing_llm_config_fails_clearly(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_LLM", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="configuration is incomplete"):
+    with pytest.raises(ProviderError, match="LLM_API_KEY"):
         validate_llm_startup()
 
 
 def test_real_llm_is_blocked_in_test_env(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("ENABLE_REAL_LLM", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
 
-    with pytest.raises(RuntimeError, match="must not be enabled"):
+    with pytest.raises(ProviderError, match="standard APP_ENV=test"):
         validate_llm_startup()
 
 

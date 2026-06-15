@@ -84,11 +84,12 @@ def test_qdrant_missing_config_fails_clearly(monkeypatch) -> None:
     monkeypatch.setenv("LITINERARY_VECTOR_PROVIDER", "qdrant")
     monkeypatch.setenv("VECTOR_DB_PROVIDER", "qdrant")
     monkeypatch.setenv("ENABLE_REAL_VECTOR_DB", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.delenv("QDRANT_URL", raising=False)
     monkeypatch.delenv("VECTOR_DB_URL", raising=False)
     get_settings.cache_clear()
 
-    with pytest.raises(RuntimeError, match="QDRANT_URL"):
+    with pytest.raises(ProviderError, match="QDRANT_URL"):
         validate_vector_startup(get_settings())
 
 

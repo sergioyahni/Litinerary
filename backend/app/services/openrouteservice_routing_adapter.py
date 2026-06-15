@@ -5,6 +5,8 @@ from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from app.core.config import get_settings
+from app.core.provider_guards import require_external_call_allowed
 from app.services.provider_contracts import (
     ProviderError,
     ProviderErrorCode,
@@ -12,6 +14,7 @@ from app.services.provider_contracts import (
     ProviderType,
     utc_now_iso,
 )
+from app.services.usage_policy import get_usage_guard
 from app.services.routing_types import RoutePlan, RouteRequest, RouteSegment
 
 
@@ -44,6 +47,15 @@ class OpenRouteServiceHttpTransport:
         profile: str,
         payload: dict[str, Any],
     ) -> tuple[dict[str, Any], int | None]:
+        settings = get_settings()
+        require_external_call_allowed(
+            provider_name="openrouteservice",
+            provider_type=ProviderType.ROUTING,
+            feature_flag_name="ENABLE_REAL_ROUTING",
+            feature_enabled=settings.enable_real_routing,
+            required_config={"ROUTING_API_KEY or OPENROUTESERVICE_API_KEY": self.settings.api_key},
+            settings=settings,
+        )
         body = json.dumps(payload).encode("utf-8")
         request = Request(
             f"{self.base_url}/v2/directions/{profile}/geojson",
@@ -127,6 +139,7 @@ class OpenRouteServiceRoutingProvider:
         self.transport = transport or OpenRouteServiceHttpTransport(settings)
 
     def plan_route(self, request: RouteRequest) -> RoutePlan:
+        get_usage_guard().guard_routing_calculation(stop_count=len(request.points))
         self._validate_request(request)
         if len(request.points) < 2:
             return RoutePlan(

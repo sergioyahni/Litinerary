@@ -18,9 +18,14 @@ class ProviderType(StrEnum):
 
 class ProviderErrorCode(StrEnum):
     NOT_CONFIGURED = "provider_not_configured"
+    EXTERNAL_CALL_BLOCKED = "external_call_blocked"
     UNAVAILABLE = "provider_unavailable"
     TIMEOUT = "provider_timeout"
     RATE_LIMITED = "rate_limited"
+    QUOTA_EXCEEDED = "quota_exceeded"
+    INPUT_TOO_LARGE = "input_too_large"
+    UNSUPPORTED_BATCH_SIZE = "unsupported_batch_size"
+    TOO_MANY_STOPS = "too_many_stops"
     INVALID_RESPONSE = "invalid_provider_response"
     LOW_CONFIDENCE = "low_confidence_result"
     UNSAFE_INPUT = "unsafe_or_copyright_restricted_input"

@@ -50,6 +50,13 @@ export async function requestJson<T>(
       const payload = (await response.json()) as { detail?: unknown };
       if (typeof payload.detail === "string") {
         detail = payload.detail;
+      } else if (
+        payload.detail &&
+        typeof payload.detail === "object" &&
+        "message" in payload.detail &&
+        typeof payload.detail.message === "string"
+      ) {
+        detail = payload.detail.message;
       }
     } catch {
       detail = response.statusText || detail;

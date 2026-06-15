@@ -11,3 +11,4 @@
 -- Prompt 35: Real routing provider adapter behind feature flags.
 -- Prompt 36: Real LLM provider adapter behind feature flags, with grounding and judge controls. 
 8. Implement prompt 39. Add prompts according to instructions. 
+9. Implement prompt 45: Beta Release Hardening Audit and Go/No-Go Report

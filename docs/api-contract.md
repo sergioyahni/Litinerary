@@ -4,6 +4,8 @@ Current scope: Phase 1 MVP plus Phase 2 foundations. Public endpoints are user-f
 
 Base URL in local development: `http://127.0.0.1:8000`
 
+All API responses include an `X-Request-ID` response header. Clients may provide `X-Request-ID`; otherwise the backend generates one. Request IDs are safe correlation values and must not contain secrets.
+
 ## Naming Conventions
 
 - Public JSON fields use camelCase.
@@ -28,7 +30,11 @@ Common errors:
 - `400`: `{"detail": "<validation message>"}`
 - `409`: `{"detail": "<conflict message>"}`
 - `422`: FastAPI request validation error.
+- `429`: provider-neutral limit failures such as `{"detail": {"code": "rate_limited", "message": "...", "metadata": {...}}}` or `quota_exceeded`.
+- `413`: provider-neutral input-size failures such as `{"detail": {"code": "input_too_large", "message": "...", "metadata": {...}}}`.
 - `500`: judge rejection may return `{"detail": {"message": "...", "reasons": [...], "warnings": [...], "confidenceScore": 0.2, "requiredFixes": [...]}}`.
+
+Limit-related provider errors use `detail.code` values including `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`. Frontend clients should display `detail.message`.
 
 ## Core Schemas
 
@@ -69,6 +75,41 @@ Response:
 ```
 
 Audience: user-facing/dev.
+
+### Readiness
+
+`GET /api/readiness`
+
+Purpose: beta-readiness check for database connectivity, provider configuration mode, external-call policy, and mock-service mode.
+
+Response:
+
+```json
+{
+  "status": "ready",
+  "appEnv": "development",
+  "checks": {
+    "database": {"status": "ok"},
+    "providers": [
+      {
+        "providerType": "llm",
+        "providerName": "fake",
+        "mode": "mock",
+        "realEnabled": false,
+        "credentialsConfigured": false,
+        "externalCallsAllowed": false,
+        "status": "mock"
+      }
+    ],
+    "externalCalls": {"allowed": false, "integrationTestsEnabled": false},
+    "mockServices": {"enabled": true}
+  }
+}
+```
+
+Readiness responses expose credential presence as booleans only. They must not include API keys, tokens, raw provider config values, prompts, copyrighted input, or user payloads.
+
+Audience: operational/dev.
 
 ### Destinations
 
@@ -257,13 +298,29 @@ Audience: user-facing.
 
 ## User Endpoints
 
-Auth mode: auth is disabled by default. When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user endpoints require `Authorization: Bearer <token>`. The only implemented validator is the local/test development token format:
+Auth mode: auth is disabled by default. When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user endpoints require `Authorization: Bearer <token>`.
+
+Local/test development can use the mock token format:
 
 ```text
 dev:<user_id>:<comma-separated-roles>:<subscription_status>
 ```
 
-Future managed providers should validate JWT issuer, audience, accepted algorithms, signature, expiry, and claims behind the same backend auth boundary.
+Development tokens and missing-token fallback are rejected in beta/staging/production. Managed providers use the same backend auth boundary and validate JWT issuer, audience, accepted algorithms, signature, expiration, and claims using `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`. Claims map through `AUTH_USER_ID_CLAIM`, `AUTH_ROLES_CLAIM`, `AUTH_SUBSCRIPTION_CLAIM`, `AUTH_EMAIL_CLAIM`, and `AUTH_DISPLAY_NAME_CLAIM`.
+
+### Current User
+
+`GET /api/me`
+
+Purpose: validate the bearer token and sync the provider subject to a local user profile.
+
+Response: `UserProfile`, including `id`, optional `email`, optional `displayName`, `role`, `subscriptionStatus`, and optional `authProvider`.
+
+Errors:
+
+- `401` missing, expired, invalid issuer, invalid audience, invalid signature, or unsupported development token.
+
+Audience: authenticated user-facing account foundation.
 
 ### Create User
 

@@ -15,6 +15,7 @@ from app.schemas.domain import (
 from app.services import database_repository as db_repository
 from app.services.mock_ai_service import get_ai_pipeline
 from app.services.routing_service import enrich_itinerary_routes
+from app.services.usage_policy import get_usage_guard
 
 
 def _use_database(db: Session | None) -> bool:
@@ -122,7 +123,13 @@ def get_itinerary(itinerary_id: str, db: Session | None = None) -> Itinerary:
 def generate_itinerary(
     request: ItineraryGenerationRequest,
     db: Session | None = None,
+    user_id: str | None = None,
+    anonymous_session_key: str | None = "anonymous",
 ) -> ItineraryGenerationResponse:
+    get_usage_guard().guard_itinerary_generation(
+        user_id=user_id,
+        anonymous_session_key=anonymous_session_key,
+    )
     destination = get_destination(request.destinationId, db=db)
     book = get_book(request.bookId, db=db)
 

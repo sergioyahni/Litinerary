@@ -4,6 +4,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.auth import CurrentUser
 from app.core.errors import conflict, not_found
 from app.models import (
     ItineraryDayModel,
@@ -53,6 +54,36 @@ def create_user(db: Session, request: UserCreateRequest) -> UserProfile:
         updated_at=_now(),
     )
     db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user_profile_from_model(user)
+
+
+def sync_user_from_current_user(db: Session, current_user: CurrentUser) -> UserProfile:
+    user = db.get(UserModel, current_user.id)
+    now = _now()
+    role = _primary_role(current_user.roles)
+    if user is None:
+        user = UserModel(
+            id=current_user.id,
+            email=current_user.email,
+            display_name=current_user.display_name,
+            auth_provider=current_user.auth_provider,
+            auth_subject=current_user.auth_subject,
+            role=role,
+            subscription_status=current_user.subscription_status,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(user)
+    else:
+        user.email = current_user.email or user.email
+        user.display_name = current_user.display_name or user.display_name
+        user.auth_provider = current_user.auth_provider
+        user.auth_subject = current_user.auth_subject
+        user.role = role
+        user.subscription_status = current_user.subscription_status
+        user.updated_at = now
     db.commit()
     db.refresh(user)
     return user_profile_from_model(user)
@@ -270,6 +301,13 @@ def _get_user(db: Session, user_id: str) -> UserModel:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _primary_role(roles: set[str]) -> str:
+    for role in ("admin", "developer", "subscriber", "user"):
+        if role in roles:
+            return role
+    return sorted(roles)[0] if roles else "user"
 
 
 def _mirror_to_vector_service(callback) -> None:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.guards import require_admin_routes
+from app.core.guards import require_admin_routes, require_admin_user_when_auth_enabled
 from app.schemas.domain import POI
 from app.schemas.poi_verification import (
     CandidateVerificationResponse,
@@ -19,7 +19,7 @@ from app.services.poi_verification import (
 router = APIRouter(
     prefix="/api/admin/poi",
     tags=["admin", "development", "poi-verification"],
-    dependencies=[Depends(require_admin_routes)],
+    dependencies=[Depends(require_admin_routes), Depends(require_admin_user_when_auth_enabled)],
 )
 
 

@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.guards import require_admin_routes, require_destructive_development_action
+from app.core.guards import (
+    require_admin_routes,
+    require_admin_user_when_auth_enabled,
+    require_destructive_development_action,
+)
 from app.schemas.seed_admin import SeedDataPayload, SeedOperationResult, SeedValidationReport
 from app.services.seed_manager import (
     export_seed_data,
@@ -15,7 +19,7 @@ from app.services.seed_manager import (
 router = APIRouter(
     prefix="/api/admin/seed",
     tags=["admin", "development", "seed-data"],
-    dependencies=[Depends(require_admin_routes)],
+    dependencies=[Depends(require_admin_routes), Depends(require_admin_user_when_auth_enabled)],
 )
 
 

@@ -54,20 +54,52 @@ Supported environment variables:
 - `ENABLE_ADMIN_ROUTES`: enables `/api/admin/*` routes. Defaults to `true` outside production and `false` in production.
 - `ENABLE_DEBUG_ROUTES`: enables development/debug routes such as `GET /api/users/{user_id}/recommendations/mock`. Defaults to `true` outside production and `false` in production.
 - `ENABLE_MOCK_SERVICES`: allows fake/mock AI, vector, and POI verification services. Defaults to `true` outside production and `false` in production.
-- Real provider feature flags: `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`. All default to `false`.
-- Auth flags: `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_REQUIRED_FOR_USER_FEATURES`, `AUTH_ALLOW_DEV_USER_FALLBACK`.
+- Real provider feature flags: `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS`. All default to `false`.
+- External-call safety: `ALLOW_EXTERNAL_CALLS=false` blocks live provider requests even if a real provider flag is accidentally enabled. `ENABLE_INTEGRATION_TESTS=false` keeps standard `APP_ENV=test` runs blocked. `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` means development and test runs cannot call live providers unless explicitly added for a deliberate integration test run.
+- Local usage guardrails: `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`, `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`, `LLM_MAX_INPUT_CHARS`, `LLM_MAX_OUTPUT_TOKENS`, `VECTOR_SEARCH_MAX_RESULTS`, `POI_VERIFICATION_MAX_BATCH_SIZE`, `ROUTING_MAX_STOPS`, `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`, and `PROVIDER_DAILY_COST_CEILING_USD`. These are mock/local controls, not billing.
+- Auth flags: `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_JWKS_URL`, `AUTH_PROVIDER_METADATA_URL`, claim mapping variables, `AUTH_REQUIRED_FOR_USER_FEATURES`, and `AUTH_ALLOW_DEV_USER_FALLBACK`.
 - `CORS_ALLOWED_ORIGINS`: comma-separated frontend origins. Local default is `http://localhost:5173,http://127.0.0.1:5173`; production default is empty and wildcard origins are ignored.
 - Provider placeholders: `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_NAME`, `LLM_BASE_URL`, `VECTOR_DB_PROVIDER`, `VECTOR_DB_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `POI_PROVIDER`, `POI_VERIFICATION_PROVIDER`, `POI_PROVIDER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `POI_VERIFICATION_API_KEY`, `ROUTING_PROVIDER`, `ROUTING_API_KEY`, `OPENROUTESERVICE_API_KEY`, `TICKETING_PROVIDER`, `TICKETING_API_KEY`.
 
 Example local values are provided in `.env.example`. Production should set explicit frontend origins, disable admin/debug/mock routes unless intentionally operating a protected internal environment, and keep all provider credentials outside the repository.
+
+Environment templates are available for local, test, beta/staging, and production planning:
+
+- Backend/root: `.env.example`, `.env.test.example`, `.env.beta.example`, `.env.production.example`
+- Frontend: `frontend/.env.example`, `frontend/.env.beta.example`, `frontend/.env.production.example`
+
+Beta dry-run instructions live in `docs/beta-deployment-runbook.md`.
+
+Standard tests are safe by default and should run without real API keys:
+
+```bash
+cd backend
+..\venv\Scripts\python.exe -m pytest
+
+cd ..\frontend
+npm test
+```
+
+Limit and quota failures return provider-neutral error codes such as `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`; the frontend displays the safe backend message.
+
+Future live integration tests must be opt-in and should set all of these intentionally for that run only:
+
+```bash
+APP_ENV=test
+ENABLE_INTEGRATION_TESTS=true
+ALLOW_EXTERNAL_CALLS=true
+ENABLE_REAL_<PROVIDER>=true
+```
 
 Current auth foundation:
 
 - Auth is disabled by default, so anonymous destination/book browsing, public repository browsing, and basic public itinerary generation still work.
 - When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user-specific endpoints require a bearer token.
 - Local/test development supports mock bearer tokens: `dev:<user_id>:<roles>:<subscription_status>`.
-- Development fallback to `dev-reader` is allowed only outside production when `AUTH_ALLOW_DEV_USER_FALLBACK=true`.
-- Production must not use `AUTH_PROVIDER=dev`; configure a managed auth provider later before enabling production auth.
+- Managed JWT validation is available for non-`dev` providers using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`.
+- `GET /api/me` syncs the current authenticated subject to a local user profile.
+- Development fallback to `dev-reader` is allowed only in development/test when `AUTH_ALLOW_DEV_USER_FALLBACK=true`; beta/staging/production reject it.
+- Production must not use `AUTH_PROVIDER=dev`; configure and stage-test a managed provider before enabling production auth.
 
 Initialize the schema with Alembic:
 
@@ -177,9 +209,11 @@ cd backend
 Useful backend endpoints:
 
 - `GET /api/health`
+- `GET /api/readiness`
 - `GET /api/destinations`
 - `GET /api/books?city_id=london`
 - `POST /api/itinerary/generate`
+- `GET /api/me`
 - `GET /api/itineraries`
 - `GET /api/itineraries/{itinerary_id}`
 - `POST /api/users`
@@ -198,6 +232,10 @@ Development/admin-only endpoints are guarded by backend configuration:
 - Debug recommendations: `/api/users/{user_id}/recommendations/mock`
 
 Destructive seed-data routes, including `POST /api/admin/seed/reset` and `POST /api/admin/seed/import`, are blocked in production even if admin routes are explicitly enabled. Use the CLI seed/reset tools only against local development databases.
+
+Backend observability is local-only by default. API responses include an `X-Request-ID` header, request start/end events are logged through the `litinerary` logger, and provider telemetry hooks record provider type, provider name, operation, success/failure, latency, warning count, estimated cost, and error type when available. Logs must not include secrets, raw prompts, copyrighted text, bearer tokens, or provider credentials.
+
+`GET /api/readiness` returns safe beta-readiness checks for database connectivity, mock/real provider mode, feature flags, external-call policy, and whether provider credentials are configured. It exposes booleans only for credentials and never returns secret values.
 
 ## Running the App Locally
 
@@ -288,16 +326,19 @@ Convenience scripts from the repository root:
 .\scripts\test_backend.ps1
 .\scripts\test_frontend.ps1
 .\scripts\test_smoke.ps1
+.\scripts\beta_dry_run.ps1
 ```
 
 The smoke path covers the MVP journey from destination and book selection through itinerary generation, mapped/text itinerary display, public repository detail, and Phase 2 development-user preference, bookmark, and review actions.
+
+The beta dry-run script validates beta-safe config, checks migration status, runs tests, starts a temporary backend, verifies `/api/health` and `/api/readiness`, confirms admin routes are disabled, and builds the frontend. It does not deploy or connect live providers.
 
 The test suites do not require real LLM, vector database, map provider, ticketing provider, auth provider, or external API calls.
 
 Security-sensitive limitations before production auth provider integration:
 
-- User-specific endpoints can be protected by the feature-flagged auth foundation, but no real external auth provider is connected yet.
-- Admin/development routes are protected by environment/config guards, not by authenticated admin identity yet.
+- User-specific endpoints can be protected by the feature-flagged auth foundation, and managed JWT validation exists, but no real external auth provider is selected or connected in the templates.
+- Admin/development routes are protected by environment/config guards and require authenticated admin/developer identity when auth is enabled.
 - Debug/mock recommendation routes are development-only and can be disabled with `ENABLE_DEBUG_ROUTES=false`.
 - Destructive seed reset/import routes are blocked in production mode.
 - Ownership/visibility fields exist and public repository endpoints hide non-public itineraries, but full private-itinerary ownership routes still require production auth integration.
@@ -312,11 +353,11 @@ Provider integration and production readiness docs:
 - Data is local mock data, not production content.
 - Itinerary generation is deterministic and mock-based.
 - Public repository persistence is SQLite-backed after database initialization and seeding; otherwise the Phase 1 in-memory mock fallback is used.
-- User accounts are a Phase 2 development foundation identified by plain `user_id`; a feature-flagged auth boundary exists, but there is no OAuth, password login, or real managed-provider JWT validation yet.
+- User accounts are a Phase 2 foundation identified locally by auth subject/user ID. A feature-flagged auth boundary and managed JWT validation exist, but there is no OAuth UI, password login, account recovery, or live provider configuration committed.
 - Vector search uses deterministic fake embeddings and an in-memory store by default. A gated Qdrant adapter boundary exists, but no real Vector DB is enabled without `ENABLE_REAL_VECTOR_DB=true`.
 - Map lines use day-level route geometry when available and straight-line mock geometry otherwise. Production route optimization, transit routing, and turn-by-turn UX remain future work.
 - Ticketing notes are static mock text, not live ticket inventory or booking links. The Google Places POI adapter may preserve a provider-supplied public place URL, but ticket inventory remains out of scope for the future ticketing adapter.
-- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. There is no managed authentication provider, subscriber chat, e-commerce, affiliate, payment, or production ticketing integration.
+- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. There is no connected managed authentication provider, e-commerce, affiliate, payment, or production ticketing integration.
 
 ## Future Implementation Phases
 

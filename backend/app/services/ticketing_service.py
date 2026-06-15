@@ -1,7 +1,10 @@
 from functools import lru_cache
 
 from app.core.config import get_settings
+from app.core.observability import record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.services.provider_contracts import ProviderMetadata, ProviderType, utc_now_iso
+from app.services.usage_policy import get_usage_guard
 from app.services.ticketing_types import (
     TicketAvailability,
     TicketAvailabilityRequest,
@@ -26,6 +29,7 @@ class MockTicketingProvider:
         self,
         request: TicketingSearchRequest,
     ) -> list[TicketingOption]:
+        get_usage_guard().guard_ticketing_lookup(request_count=request.limit)
         poi_name = request.query.strip() or "literary stop"
         return self.find_ticketing_options(
             TicketingRequest(
@@ -37,6 +41,7 @@ class MockTicketingProvider:
         )[: request.limit]
 
     def find_ticketing_options(self, request: TicketingRequest) -> list[TicketingOption]:
+        get_usage_guard().guard_ticketing_lookup()
         link = self.lookup_ticketing_url(
             TicketingUrlRequest(
                 poi_id=request.poi_id,
@@ -60,6 +65,7 @@ class MockTicketingProvider:
         ]
 
     def lookup_availability(self, request: TicketAvailabilityRequest) -> TicketAvailability:
+        get_usage_guard().guard_ticketing_lookup()
         checked_at = utc_now_iso()
         return TicketAvailability(
             status="unknown",
@@ -76,6 +82,7 @@ class MockTicketingProvider:
         )
 
     def lookup_ticketing_url(self, request: TicketingUrlRequest) -> TicketingLink | None:
+        get_usage_guard().guard_ticketing_lookup()
         source_url = f"{self.base_url}/tickets/{_slugify(request.poi_name)}"
         checked_at = utc_now_iso()
         return TicketingLink(
@@ -93,6 +100,7 @@ class MockTicketingProvider:
         )
 
     def lookup_tour_booking_url(self, request: TourBookingRequest) -> TourBookingOption | None:
+        get_usage_guard().guard_ticketing_lookup()
         source_url = (
             f"{self.base_url}/tours/{_slugify(request.destination_id)}/"
             f"{_slugify(request.poi_name)}"
@@ -131,6 +139,11 @@ def get_ticketing_provider() -> TicketingProvider:
         raise RuntimeError(
             f"Ticketing provider '{settings.ticketing_provider}' is configured but not implemented."
         )
+    record_provider_selection(
+        provider_type=ProviderType.TICKETING.value,
+        provider_name="mock",
+        mode="mock",
+    )
     return MockTicketingProvider(settings.ticketing_base_url)
 
 
@@ -143,6 +156,17 @@ def validate_ticketing_startup(settings=None) -> None:
             "Real ticketing is enabled but no real ticketing adapter is implemented. "
             "Set ENABLE_REAL_TICKETING=false to use mock ticketing placeholders."
         )
+    require_external_call_allowed(
+        provider_name=resolved.ticketing_provider,
+        provider_type=ProviderType.TICKETING,
+        feature_flag_name="ENABLE_REAL_TICKETING",
+        feature_enabled=resolved.enable_real_ticketing,
+        required_config={
+            "TICKETING_API_KEY": resolved.ticketing_api_key,
+            "TICKETING_BASE_URL": resolved.ticketing_base_url,
+        },
+        settings=resolved,
+    )
     missing = []
     if not resolved.ticketing_api_key:
         missing.append("TICKETING_API_KEY")

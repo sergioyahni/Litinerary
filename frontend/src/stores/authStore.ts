@@ -6,12 +6,16 @@ import {
   loginWithDevelopmentSubscriberToken,
   loginWithDevelopmentToken,
   logout as logoutSession,
+  refreshCurrentUserSession,
+  setManagedAuthSession,
   type AuthSession,
 } from "../services/authService";
 import { ApiError } from "../services/apiClient";
+import type { UserProfile } from "../types/domain";
 
 export const useAuthStore = defineStore("auth", () => {
   const session = ref<AuthSession | null>(getAuthSession());
+  const currentUser = ref<UserProfile | null>(null);
   const error = ref<string | null>(null);
   const lastAuthStatus = ref<401 | 403 | null>(null);
 
@@ -30,6 +34,7 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
     try {
       session.value = await loginWithDevelopmentToken(userId);
+      currentUser.value = null;
       lastAuthStatus.value = null;
       return true;
     } catch (caught) {
@@ -42,6 +47,7 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = null;
     try {
       session.value = await loginWithDevelopmentSubscriberToken(userId);
+      currentUser.value = null;
       lastAuthStatus.value = null;
       return true;
     } catch (caught) {
@@ -50,9 +56,45 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  async function acceptManagedToken(token: string): Promise<boolean> {
+    error.value = null;
+    try {
+      session.value = setManagedAuthSession(token);
+      const refreshed = await refreshCurrentUserSession();
+      session.value = refreshed.session;
+      currentUser.value = refreshed.profile;
+      lastAuthStatus.value = null;
+      return true;
+    } catch (caught) {
+      session.value = null;
+      currentUser.value = null;
+      handleApiError(caught);
+      return false;
+    }
+  }
+
+  async function loadCurrentUser(): Promise<UserProfile | null> {
+    error.value = null;
+    try {
+      const refreshed = await refreshCurrentUserSession();
+      session.value = refreshed.session;
+      currentUser.value = refreshed.profile;
+      lastAuthStatus.value = null;
+      return refreshed.profile;
+    } catch (caught) {
+      handleApiError(caught);
+      if (caught instanceof ApiError && caught.isUnauthorized) {
+        session.value = null;
+        currentUser.value = null;
+      }
+      return null;
+    }
+  }
+
   async function logout(): Promise<void> {
     await logoutSession();
     session.value = null;
+    currentUser.value = null;
     error.value = null;
     lastAuthStatus.value = null;
   }
@@ -71,6 +113,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   return {
     session,
+    currentUser,
     error,
     lastAuthStatus,
     isAuthEnabled,
@@ -80,6 +123,8 @@ export const useAuthStore = defineStore("auth", () => {
     isSubscriber,
     loginDevelopmentUser,
     loginDevelopmentSubscriber,
+    acceptManagedToken,
+    loadCurrentUser,
     logout,
     handleApiError,
   };

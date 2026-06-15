@@ -1,5 +1,7 @@
 from fastapi import HTTPException
 
+from app.core.observability import EventName, log_event
+
 
 def not_found(resource: str, identifier: str) -> HTTPException:
     return HTTPException(status_code=404, detail=f"Unknown {resource}: {identifier}")
@@ -24,6 +26,13 @@ def mock_judge_rejected(
     confidence_score: float | None = None,
     required_fixes: list[str] | None = None,
 ) -> HTTPException:
+    log_event(
+        EventName.LLM_JUDGE_REJECTED,
+        category="llm_judge",
+        reason_count=len(reasons),
+        warning_count=len(warnings),
+        confidence_score=confidence_score,
+    )
     return HTTPException(
         status_code=500,
         detail={

@@ -10,8 +10,11 @@ Current related docs/modules:
 - Root setup: `README.md`
 - Backend setup: `backend/README.md`
 - Environment example: `.env.example`
+- Beta runbook: `docs/beta-deployment-runbook.md`
 - Config: `backend/app/core/config.py`
 - Guards: `backend/app/core/guards.py`
+- External-call guard: `backend/app/core/provider_guards.py`
+- Usage/cost guardrails: `backend/app/services/usage_policy.py`
 - Backend tests: `backend/tests`
 - Frontend tests: `frontend/src/**/*.test.ts`
 
@@ -26,9 +29,15 @@ Current related docs/modules:
 | Debug routes | `ENABLE_DEBUG_ROUTES=false`. |
 | Mock services | `ENABLE_MOCK_SERVICES=false` unless running a protected mock environment. |
 | Provider feature flags | Keep `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS` false until each gate below passes. |
+| External calls | Keep `ALLOW_EXTERNAL_CALLS=false` until production provider integration is approved. Set `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` unless running explicit live integration tests. |
+| Integration tests | Keep `ENABLE_INTEGRATION_TESTS=false` for standard test runs. Live integration tests must opt in per command and remain skipped by default. |
+| Usage limits | Keep finite local defaults for itinerary generation, subscriber chat, vector search, POI batches, routing stops, ticketing lookups, and LLM input/output size. |
+| Cost ceiling | Keep `PROVIDER_DAILY_COST_CEILING_USD=0` until durable provider metering and alerts exist. |
 | Secrets | Use a secret manager or deployment environment variables. Never commit credentials. |
 | `.env.example` | Keep as placeholder-only documentation. |
 | Startup validation | Missing real provider credentials should produce visible validation notes. |
+
+Beta/staging dry-run templates exist in `.env.beta.example` and `frontend/.env.beta.example`. Production planning templates exist in `.env.production.example` and `frontend/.env.production.example`; these are placeholder-only and must not contain secrets.
 
 ## 2. Database and Migrations
 
@@ -41,7 +50,7 @@ Current related docs/modules:
 | Seed separation | Seed/reset tools must never run against production data. |
 | Data retention | Define retention for users, reviews, generated itineraries, chat sessions, and vector records. |
 | Public/private data | `owner_user_id`, `visibility`, `created_by_mode`, `created_by_user_id`, and `subscriber_only` exist. Public repository endpoints hide non-public itineraries. |
-| User data | Auth provider subject, role, subscription status, and updated timestamp fields exist. Managed-provider sync is still pending. |
+| User data | Auth provider subject, role, subscription status, and updated timestamp fields exist. `/api/me` syncs managed-provider subjects to local profiles. |
 | Review data | Decide moderation/public visibility policy. |
 | Vector metadata | `embedding_records` tracks collection, provider, model, dimension, external ID, metadata version, last embedded timestamp, and provenance metadata. Backfill/deletion policy is still pending. |
 
@@ -50,15 +59,15 @@ Current related docs/modules:
 | Check | Required before production |
 |---|---|
 | Auth provider | Choose managed provider. Do not roll custom passwords initially. |
-| Auth feature flags | Review `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_REQUIRED_FOR_USER_FEATURES`, and `AUTH_ALLOW_DEV_USER_FALLBACK`. |
-| JWT/session validation | FastAPI must verify provider JWTs using JWKS or trusted SDK. |
-| Registered flow | Add `/api/me` style current-user routes. |
+| Auth feature flags | Review `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_JWKS_URL`, `AUTH_PROVIDER_METADATA_URL`, claim mapping variables, `AUTH_REQUIRED_FOR_USER_FEATURES`, and `AUTH_ALLOW_DEV_USER_FALLBACK`. |
+| JWT/session validation | FastAPI verifies provider JWTs using configured JWKS or provider metadata. Production still requires selecting and staging a real managed provider. |
+| Registered flow | `/api/me` validates the bearer token and syncs the current provider subject to a local profile. |
 | Anonymous flow | Keep destinations/books/basic generation/public repository available. |
 | Subscriber access | Gate chat/refinement/premium features by entitlement. |
 | Admin roles | Add authenticated admin/developer role checks on top of config guards. |
 | Ownership checks | Enforce user ownership for preferences, bookmarks, reviews, private itineraries, chat sessions. |
 | 401/403 behavior | Standardize backend responses and frontend handling. |
-| Frontend protection | Add auth store, route guards, token attachment, logout/session reset. |
+| Frontend protection | Auth store, token attachment, `/api/me` sync, 401/403 handling, logout/session reset, and provider-login placeholders exist. Add real provider UI/SDK during provider selection. |
 
 ## 4. External Provider Integration Gates
 
@@ -75,12 +84,27 @@ Current related docs/modules:
 
 For every provider:
 
+- `require_external_call_allowed` must run before any external HTTP request.
+- `ProviderUsageGuard` must run before provider-like work that can consume quota, tokens, or money.
+- `ALLOW_EXTERNAL_CALLS=true` must be explicit.
+- Standard `APP_ENV=test` runs must remain blocked unless `ENABLE_INTEGRATION_TESTS=true`.
 - Contract tests must pass.
 - Missing credentials must fail clearly.
 - Timeouts and bounded retries must be configured.
 - Logs must exclude secrets and raw sensitive payloads.
-- Cost and latency metrics must be observable.
+- Cost, quota, and latency metrics must be observable.
 - Fallback behavior must be explicit.
+
+## 4.1 Local Usage Guardrails
+
+The current guardrails are intentionally local/mock:
+
+- In-memory usage records are created in `backend/app/services/usage_policy.py`.
+- Standard tests exercise anonymous generation, registered-user generation, subscriber chat, routing stop count, POI batch size, LLM input size, vector search size, estimated cost ceiling, and UTC day-window reset behavior.
+- Limit-related failures normalize to provider error codes such as `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`.
+- FastAPI maps those provider errors to explicit HTTP responses, and the frontend API client displays the safe `message` field.
+
+Before production provider traffic, replace in-memory counters with durable storage keyed by user/session/provider, add alerting, reconcile estimated cost with provider billing, and decide how limits vary by anonymous, registered, subscriber, and admin roles.
 
 ## 5. Security Checklist
 
@@ -90,7 +114,7 @@ For every provider:
 | Admin endpoints | Config-guarded and authenticated admin-guarded. |
 | Destructive routes | Disabled in production. |
 | CORS | Exact origins only. |
-| Rate limiting | Required before real LLM/routing/POI/ticketing calls. |
+| Rate limiting | Local guardrails exist; replace with durable distributed enforcement before real LLM/routing/POI/ticketing/TTS traffic. |
 | Input validation | Pydantic schemas plus domain validation. |
 | Output sanitization | No raw provider payloads or secrets to frontend. |
 | Logging | Avoid sensitive user data, copyrighted text, tokens, API keys. |
@@ -104,20 +128,27 @@ For every provider:
 - The foundation uses `require_subscriber_user`; it does not implement billing, payment, checkout, or subscription purchase.
 - Current chat replies and itinerary refinements use the local mock AI pipeline only.
 - Chat-generated itineraries are private, subscriber-only, owned by the current user, and excluded from the public repository.
-- Before production launch, replace development auth with a managed auth provider, connect subscription entitlement sync, add moderation/retention policy, and keep real LLM usage behind the existing LLM grounding/judge gates.
+- Before production launch, configure and stage-test a managed auth provider, connect subscription entitlement sync, add moderation/retention policy, and keep real LLM usage behind the existing LLM grounding/judge gates.
 
 ## 6. Observability and Operations
 
 | Check | Required before production |
 |---|---|
 | Structured logging | Include request IDs and provider request IDs. |
-| Request IDs | Propagate through API/provider calls. |
-| Error tracking | Capture backend/frontend errors without secrets. |
-| Provider metrics | Track latency, cost estimate, rate limits, confidence, failure code. |
-| Health checks | `/api/health` exists; add readiness checks for DB/config. |
-| Readiness checks | Should verify migration state and required production env vars. |
+| Request IDs | API middleware emits and returns `X-Request-ID`; future edge/proxy layers should preserve it. |
+| Error tracking | Capture backend/frontend errors without secrets, raw prompts, copyrighted text, tokens, or provider credentials. |
+| Provider metrics | Local provider telemetry hooks capture provider type, name, operation, success/failure, latency, estimated cost, warning count, error type, and request ID. |
+| Health checks | `/api/health` remains a minimal liveness endpoint. |
+| Readiness checks | `/api/readiness` verifies DB connectivity and reports provider mock/real mode plus credential-presence booleans without exposing secrets. Add migration-state checks before production. |
 | Backup monitoring | Verify backup freshness and restore drills. |
 | Migration monitoring | Track migration success/failure and rollback path. |
+
+Current observability is local logging only:
+
+- Event names are centralized in `backend/app/core/observability.py`.
+- Structured events cover request start/end, provider selection, provider success/failure, external-call blocks, rate-limit decisions, itinerary generation, POI verification, routing, judge rejection, auth failures, and admin/development actions.
+- Readiness and provider status responses redact credentials and expose only safe booleans.
+- No paid observability backend is connected. Production should choose log retention, sampling, PII policy, dashboards, alerting, and incident runbooks before beta traffic expands.
 
 ## 7. Testing Gate
 
@@ -145,22 +176,42 @@ Checklist:
 - Tests require no external network calls.
 - No real credentials are required.
 
+## 7.1 Beta Deployment Dry Run
+
+Before any beta/staging deployment attempt, run:
+
+```powershell
+.\scripts\beta_dry_run.ps1
+```
+
+The dry run:
+
+- Validates `APP_ENV=beta` configuration with admin/debug routes disabled.
+- Verifies external calls remain blocked and real provider flags remain disabled.
+- Checks Alembic heads/current migration status.
+- Runs backend and frontend tests.
+- Builds the frontend.
+- Starts a temporary backend server.
+- Confirms `/api/health` and `/api/readiness`.
+- Confirms admin routes return `403`.
+- Performs no deployment and uses no real secrets.
+
 ## 8. Real Integration Readiness Score
 
 | Area | Status | Blockers | Recommended next prompt |
 |---|---|---|---|
-| Auth provider | Blocked | Provider-neutral auth boundary and user auth identity fields exist, but no managed provider is selected and no real JWT validation is implemented. | "Integrate managed auth provider JWT validation behind `ENABLE_AUTH` without changing anonymous access." |
+| Auth provider | Partially Ready | Provider-neutral JWT validation, `/api/me`, claim mapping, local profile sync, and admin-role checks exist behind flags. A real managed provider is still not selected, configured, or stage-tested. | "Select and configure managed auth provider in staging with mocked fallback disabled." |
 | LLM provider | Almost Ready | OpenAI-compatible adapter boundary, grounding checks, structured judge results, and mocked contract tests exist, but production traffic still needs rate limiting, spend enforcement, prompt/version governance, monitoring, and explicit integration-test opt-in. | "Add gated live LLM integration tests, spend enforcement, and provider observability before production LLM traffic." |
 | Vector DB | Almost Ready | Qdrant adapter boundary, contract tests, and metadata model exist, but production deployment still needs a real Qdrant environment, explicit backfill execution, deletion/retention policy, and monitoring. | "Implement gated Qdrant integration test profile and vector backfill executor with deletion policy." |
 | POI provider | Almost Ready | Google Places adapter boundary, mocked contract tests, confidence policy, and persistence metadata exist, but production traffic still needs real credentials, rate limiting, monitoring, terms review, and explicit integration-test opt-in. | "Add gated live Google Places integration tests and provider observability before production POI traffic." |
 | Routing provider | Almost Ready | OpenRouteService adapter boundary, mocked contract tests, day-level route geometry, and fallback policy exist, but production traffic still needs real credentials, rate limiting, monitoring, attribution/terms review, and explicit integration-test opt-in. | "Add gated live OpenRouteService integration tests and routing observability before production route traffic." |
 | Ticketing provider | Needs Review | Provider-neutral boundary and mock links exist, but no real provider is implemented; affiliate/legal/product policy, stale inventory language, provider terms review, rate limits, and monitoring are still needed. | "Select a real ticketing provider and add gated integration tests after legal/product review." |
 | Affiliate provider | Needs Review | Provider-neutral boundary and mock book links exist, but no real provider, tracking disclosure, or commerce review is implemented. | "Select an affiliate provider and add disclosure-safe integration tests after commerce/legal review." |
-| Production deployment | Blocked | Auth, ownership, migrations, rate limits, observability, readiness checks incomplete. | “Create production deployment hardening plan with readiness checks and secret management.” |
+| Production deployment | Blocked | Managed auth provider selection/staging, ownership/private-itinerary hardening, durable rate limits, observability retention, and deployment readiness checks remain incomplete. | "Create production deployment hardening plan with readiness checks and secret management." |
 
 ## 9. Recommended Next Prompts
 
-1. "Integrate managed auth provider JWT validation behind `ENABLE_AUTH` without changing anonymous access."
+1. "Select and configure managed auth provider in staging with mocked fallback disabled."
 2. "Implement gated Qdrant integration test profile and vector backfill executor with deletion policy."
 3. "Add gated live Google Places integration tests and provider observability before production POI traffic."
 4. "Add gated live OpenRouteService integration tests and routing observability before production route traffic."

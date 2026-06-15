@@ -15,6 +15,8 @@ Relevant modules:
 - Narration/TTS placeholder: `backend/app/services/narration_types.py`, `backend/app/services/narration_service.py`
 - Affiliate placeholder: `backend/app/services/affiliate_types.py`
 - Provider configuration: `backend/app/core/config.py`
+- External-call guard: `backend/app/core/provider_guards.py`
+- Usage/cost guardrails: `backend/app/services/usage_policy.py`
 
 ## Feature Flags
 
@@ -31,6 +33,60 @@ Real provider calls must remain disabled unless explicitly enabled:
 | Affiliate/e-commerce | `AFFILIATE_PROVIDER` | `ENABLE_AFFILIATE_LINKS` | provider-neutral boundary with `example.test` mock book links; no checkout |
 
 Production defaults keep real provider flags disabled. Missing credentials should produce clear startup validation notes, not silent external calls.
+
+## External-Call Policy
+
+Every live provider call must pass the central guard in `backend/app/core/provider_guards.py` before an HTTP request is made. Real-capable selectors and HTTP transports must call `require_external_call_allowed`.
+
+Default policy:
+
+- `ALLOW_EXTERNAL_CALLS=false` blocks all live provider requests.
+- `ENABLE_INTEGRATION_TESTS=false` keeps standard tests blocked.
+- `APP_ENV=test` blocks external calls unless `ENABLE_INTEGRATION_TESTS=true`.
+- `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` allows live calls only in production by default.
+- Provider-specific flags such as `ENABLE_REAL_LLM` and `ENABLE_REAL_ROUTING` must still be enabled.
+- Required provider config such as API keys, URLs, model names, and timeout values must be present.
+
+Future integration tests that intentionally make live calls must be skipped by default and require explicit environment opt-in:
+
+```bash
+APP_ENV=test
+ENABLE_INTEGRATION_TESTS=true
+ALLOW_EXTERNAL_CALLS=true
+ENABLE_REAL_<PROVIDER>=true
+```
+
+Do not set these in standard unit, API, frontend, or smoke test commands.
+
+## Rate, Quota, and Cost Guardrails
+
+Provider-like operations also pass through local usage policy helpers in `backend/app/services/usage_policy.py`. This is a mock/local foundation, not billing or production-grade metering. It records provider type, operation type, request count, estimated token usage, estimated cost, user ID or anonymous session key, timestamp, provider metadata, and whether the request was allowed or blocked.
+
+Current guarded operations:
+
+- Itinerary generation.
+- Subscriber chat messages and chat itinerary refinement.
+- LLM completion input/output size.
+- Vector search and upsert.
+- POI verification.
+- Routing calculation.
+- Ticketing lookup.
+- Text narration/TTS placeholder generation.
+
+Configurable limits live in `backend/app/core/config.py` and `.env.example`:
+
+- `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`
+- `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`
+- `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`
+- `LLM_MAX_INPUT_CHARS`
+- `LLM_MAX_OUTPUT_TOKENS`
+- `VECTOR_SEARCH_MAX_RESULTS`
+- `POI_VERIFICATION_MAX_BATCH_SIZE`
+- `ROUTING_MAX_STOPS`
+- `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`
+- `PROVIDER_DAILY_COST_CEILING_USD`
+
+Default persistence is in-memory and deterministic for tests. Production must replace it with durable per-user/session metering before enabling real provider traffic. The cost ceiling defaults to `0`, so any future positive-cost operation must explicitly configure a nonzero ceiling before it can pass.
 
 ## Standard Metadata
 
@@ -59,9 +115,14 @@ Use `ProviderMetadata.public_dict()` before exposing metadata outside trusted ba
 Provider errors should use `ProviderError` with `ProviderErrorCode`:
 
 - `provider_not_configured`
+- `external_call_blocked`
 - `provider_unavailable`
 - `provider_timeout`
 - `rate_limited`
+- `quota_exceeded`
+- `input_too_large`
+- `unsupported_batch_size`
+- `too_many_stops`
 - `invalid_provider_response`
 - `low_confidence_result`
 - `unsafe_or_copyright_restricted_input`
@@ -70,7 +131,7 @@ Provider errors should use `ProviderError` with `ProviderErrorCode`:
 - `cost_limit_exceeded`
 - `real_provider_disabled`
 
-Adapters should normalize provider-specific failures into these codes. Raw provider errors may be logged internally only if they do not contain secrets, copyrighted text, or sensitive user data.
+Adapters should normalize provider-specific failures into these codes. API responses for these errors return a structured `detail` object with `code`, `message`, and safe provider metadata; frontend clients should display the `message`. Raw provider errors may be logged internally only if they do not contain secrets, copyrighted text, or sensitive user data.
 
 ## Contract Expectations
 

@@ -9,12 +9,15 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.errors import not_found
+from app.core.observability import EventName, log_event, record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.models import BookLocationCandidateModel, POIModel
 from app.schemas.domain import POI
 from app.schemas.poi_verification import CandidateVerificationResponse, POIVerificationResponse
 from app.services.database_repository import poi_from_model
 from app.services.provider_contracts import ProviderMetadata, ProviderType
 from app.services.schema_converters import candidate_from_model, verification_result_response
+from app.services.usage_policy import get_usage_guard
 
 
 POI_VERIFICATION_STATUSES = {
@@ -247,6 +250,13 @@ class MockPOIVerificationAdapter:
 
 
 def verify_candidate(db: Session, candidate_id: str) -> POIVerificationResult:
+    log_event(
+        EventName.POI_VERIFICATION_REQUESTED,
+        category="poi_verification",
+        target_type="candidate",
+        target_id=candidate_id,
+    )
+    get_usage_guard().guard_poi_verification_batch(request_count=1)
     candidate = db.get(BookLocationCandidateModel, candidate_id)
     if candidate is None:
         raise not_found("candidate", candidate_id)
@@ -254,6 +264,13 @@ def verify_candidate(db: Session, candidate_id: str) -> POIVerificationResult:
 
 
 def verify_candidate_response(db: Session, candidate_id: str) -> CandidateVerificationResponse:
+    log_event(
+        EventName.POI_VERIFICATION_REQUESTED,
+        category="poi_verification",
+        target_type="candidate",
+        target_id=candidate_id,
+    )
+    get_usage_guard().guard_poi_verification_batch(request_count=1)
     candidate = _get_candidate(db, candidate_id)
     result = get_poi_verification_adapter().resolve_candidate(db, candidate)
     return CandidateVerificationResponse(
@@ -263,6 +280,13 @@ def verify_candidate_response(db: Session, candidate_id: str) -> CandidateVerifi
 
 
 def verify_poi(db: Session, poi_id: str) -> POIVerificationResult:
+    log_event(
+        EventName.POI_VERIFICATION_REQUESTED,
+        category="poi_verification",
+        target_type="poi",
+        target_id=poi_id,
+    )
+    get_usage_guard().guard_poi_verification_batch(request_count=1)
     poi = _get_poi(db, poi_id)
     result = get_poi_verification_adapter().verify_poi(db, poi)
     apply_verification_result(poi, result)
@@ -272,6 +296,13 @@ def verify_poi(db: Session, poi_id: str) -> POIVerificationResult:
 
 
 def verify_poi_response(db: Session, poi_id: str) -> POIVerificationResponse:
+    log_event(
+        EventName.POI_VERIFICATION_REQUESTED,
+        category="poi_verification",
+        target_type="poi",
+        target_id=poi_id,
+    )
+    get_usage_guard().guard_poi_verification_batch(request_count=1)
     poi = _get_poi(db, poi_id)
     result = get_poi_verification_adapter().verify_poi(db, poi)
     apply_verification_result(poi, result)
@@ -366,6 +397,11 @@ def get_poi_verification_adapter() -> POIVerificationAdapter:
             f"'{settings.poi_verification_provider}' is disabled by ENABLE_REAL_POI_PROVIDER."
         )
     if settings.poi_verification_provider == "google_places":
+        record_provider_selection(
+            provider_type=ProviderType.POI_VERIFICATION.value,
+            provider_name="google_places",
+            mode="real",
+        )
         validate_poi_provider_startup(settings)
         from app.services.google_places_poi_adapter import (
             GooglePlacesPOIVerificationAdapter,
@@ -388,6 +424,11 @@ def get_poi_verification_adapter() -> POIVerificationAdapter:
             "POI verification provider "
             f"'{settings.poi_verification_provider}' is configured but not implemented."
         )
+    record_provider_selection(
+        provider_type=ProviderType.POI_VERIFICATION.value,
+        provider_name="mock",
+        mode="mock",
+    )
     return MockPOIVerificationAdapter()
 
 
@@ -400,6 +441,18 @@ def validate_poi_provider_startup(settings=None) -> None:
             "Real POI provider is enabled but only the Google Places adapter boundary is "
             "implemented. Set POI_PROVIDER=google_places or disable ENABLE_REAL_POI_PROVIDER."
         )
+    require_external_call_allowed(
+        provider_name="google_places",
+        provider_type=ProviderType.POI_VERIFICATION,
+        feature_flag_name="ENABLE_REAL_POI_PROVIDER",
+        feature_enabled=resolved.enable_real_poi_provider,
+        required_config={
+            "POI_PROVIDER_API_KEY, GOOGLE_PLACES_API_KEY, or POI_VERIFICATION_API_KEY": (
+                resolved.poi_verification_api_key
+            )
+        },
+        settings=resolved,
+    )
     missing = []
     if not resolved.poi_verification_api_key:
         missing.append("POI_PROVIDER_API_KEY, GOOGLE_PLACES_API_KEY, or POI_VERIFICATION_API_KEY")

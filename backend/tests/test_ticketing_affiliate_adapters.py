@@ -36,6 +36,8 @@ def test_mock_ticketing_and_affiliate_are_default_without_credentials(monkeypatc
 
 def test_real_ticketing_enabled_without_config_fails_clearly(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_TICKETING", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.setenv("TICKETING_PROVIDER", "future_ticketing")
     monkeypatch.delenv("TICKETING_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -55,6 +57,8 @@ def test_real_ticketing_enabled_with_mock_provider_fails_clearly(monkeypatch) ->
 
 def test_real_affiliate_enabled_without_config_fails_clearly(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_AFFILIATE_LINKS", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.setenv("AFFILIATE_PROVIDER", "future_affiliate")
     monkeypatch.delenv("AFFILIATE_API_KEY", raising=False)
     get_settings.cache_clear()

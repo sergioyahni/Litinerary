@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.observability import EventName, log_event
 from app.schemas.domain import (
     Itinerary,
     ItineraryAdaptationRequest,
@@ -30,7 +31,33 @@ def post_generate_itinerary(
     request: ItineraryGenerationRequest,
     db: Session = Depends(get_db),
 ) -> ItineraryGenerationResponse:
-    return generate_itinerary(request, db=db)
+    log_event(
+        EventName.ITINERARY_GENERATION_REQUESTED,
+        category="itinerary",
+        destination_id=request.destinationId,
+        book_id=request.bookId,
+        duration_days=request.durationDays,
+        transportation_mode=request.transportationMode,
+    )
+    try:
+        response = generate_itinerary(request, db=db)
+    except Exception as exc:
+        log_event(
+            EventName.ITINERARY_GENERATION_FAILED,
+            category="itinerary",
+            destination_id=request.destinationId,
+            book_id=request.bookId,
+            error_type=exc.__class__.__name__,
+        )
+        raise
+    log_event(
+        EventName.ITINERARY_GENERATION_SUCCEEDED,
+        category="itinerary",
+        itinerary_id=response.itinerary.id,
+        matched_existing=response.matchedExisting,
+        source_itinerary_id=response.sourceItineraryId,
+    )
+    return response
 
 
 @router.post(

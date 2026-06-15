@@ -7,6 +7,8 @@ from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.core.provider_guards import require_external_call_allowed
 from app.models import BookLocationCandidateModel, DestinationModel, POIModel
 from app.services.poi_verification import (
     LogisticsMetadata,
@@ -56,6 +58,19 @@ class GooglePlacesHttpTransport:
         payload: dict[str, Any],
         field_mask: str,
     ) -> tuple[dict[str, Any], int | None]:
+        settings = get_settings()
+        require_external_call_allowed(
+            provider_name="google_places",
+            provider_type=ProviderType.POI_VERIFICATION,
+            feature_flag_name="ENABLE_REAL_POI_PROVIDER",
+            feature_enabled=settings.enable_real_poi_provider,
+            required_config={
+                "POI_PROVIDER_API_KEY, GOOGLE_PLACES_API_KEY, or POI_VERIFICATION_API_KEY": (
+                    self.settings.api_key
+                )
+            },
+            settings=settings,
+        )
         body = json.dumps(payload).encode("utf-8")
         request = Request(
             f"{self.base_url}/v1/places:searchText",

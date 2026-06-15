@@ -55,6 +55,8 @@ def test_openrouteservice_selection_requires_real_routing_flag(monkeypatch) -> N
 
 def test_openrouteservice_selection_when_enabled(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_ROUTING", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.setenv("ROUTING_PROVIDER", "openrouteservice")
     monkeypatch.setenv("OPENROUTESERVICE_API_KEY", "test-key")
 
@@ -65,11 +67,12 @@ def test_openrouteservice_selection_when_enabled(monkeypatch) -> None:
 
 def test_missing_openrouteservice_config_fails_clearly(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_REAL_ROUTING", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("ROUTING_PROVIDER", "openrouteservice")
     monkeypatch.delenv("OPENROUTESERVICE_API_KEY", raising=False)
     monkeypatch.delenv("ROUTING_API_KEY", raising=False)
 
-    with pytest.raises(RuntimeError, match="configuration is incomplete"):
+    with pytest.raises(ProviderError, match="OPENROUTESERVICE_API_KEY"):
         validate_routing_startup()
 
 

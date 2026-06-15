@@ -2,16 +2,27 @@ from functools import lru_cache
 from math import sqrt
 
 from app.core.config import get_settings
+from app.core.observability import EventName, log_event, record_provider_selection
+from app.core.provider_guards import require_external_call_allowed
 from app.schemas.domain import Itinerary, ItineraryDay
 from app.services.provider_contracts import ProviderError, ProviderMetadata, ProviderType
 from app.services.routing_types import RoutePlan, RoutePoint, RouteRequest, RouteSegment, RoutingProvider
+from app.services.usage_policy import get_usage_guard
 
 
 class MockRoutingProvider:
     provider_name = "mock_routing"
 
     def plan_route(self, request: RouteRequest) -> RoutePlan:
-        _validate_route_request(request, max_stops=50)
+        log_event(
+            EventName.ROUTING_REQUESTED,
+            category="routing",
+            provider_name=self.provider_name,
+            stop_count=len(request.points),
+            transportation_mode=request.transportation_mode,
+        )
+        get_usage_guard().guard_routing_calculation(stop_count=len(request.points))
+        _validate_route_request(request, max_stops=get_settings().routing_max_stops)
         segments: list[RouteSegment] = []
         for origin, destination in zip(request.points, request.points[1:], strict=False):
             distance = _rough_distance_km(
@@ -68,6 +79,11 @@ def get_routing_provider() -> RoutingProvider:
             f"Real routing provider '{settings.routing_provider}' is disabled by ENABLE_REAL_ROUTING."
         )
     if settings.routing_provider == "openrouteservice":
+        record_provider_selection(
+            provider_type=ProviderType.ROUTING.value,
+            provider_name="openrouteservice",
+            mode="real",
+        )
         validate_routing_startup(settings)
         from app.services.openrouteservice_routing_adapter import (
             OpenRouteServiceRoutingProvider,
@@ -88,6 +104,11 @@ def get_routing_provider() -> RoutingProvider:
         raise RuntimeError(
             f"Routing provider '{settings.routing_provider}' is configured but not implemented."
         )
+    record_provider_selection(
+        provider_type=ProviderType.ROUTING.value,
+        provider_name="mock",
+        mode="mock",
+    )
     return MockRoutingProvider()
 
 
@@ -100,6 +121,14 @@ def validate_routing_startup(settings=None) -> None:
             "Real routing is enabled but only the OpenRouteService adapter boundary is "
             "implemented. Set ROUTING_PROVIDER=openrouteservice or disable ENABLE_REAL_ROUTING."
         )
+    require_external_call_allowed(
+        provider_name="openrouteservice",
+        provider_type=ProviderType.ROUTING,
+        feature_flag_name="ENABLE_REAL_ROUTING",
+        feature_enabled=resolved.enable_real_routing,
+        required_config={"ROUTING_API_KEY or OPENROUTESERVICE_API_KEY": resolved.routing_api_key},
+        settings=resolved,
+    )
     missing = []
     if not resolved.routing_api_key:
         missing.append("ROUTING_API_KEY or OPENROUTESERVICE_API_KEY")

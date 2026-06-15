@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.*.example
+!frontend/.env*.example
 
 # Node / frontend
 node_modules/
@@ -17,12 +19,14 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp*/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 backend/.pytest_cache/
 backend/.pytest_tmp/
+backend/.pytest_tmp*/
 
 # Virtual environments
 .venv/
@@ -55,3 +59,6 @@ desktop.ini
 .cache/
 .parcel-cache/
 .vite/
+
+# Docs
+docs/*

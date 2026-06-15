@@ -1,10 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 from time import monotonic
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from app.core.config import get_settings
+from app.core.provider_guards import require_external_call_allowed
 from app.data.mock_data import MOCK_CREATED_AT
 from app.schemas.domain import Book, Destination, Itinerary, ItineraryGenerationRequest, POI
 from app.schemas.users import UserReview
@@ -26,6 +28,7 @@ from app.services.provider_contracts import (
     ProviderType,
     utc_now_iso,
 )
+from app.services.usage_policy import get_usage_guard
 
 
 class LLMTransport(Protocol):
@@ -54,6 +57,19 @@ class OpenAICompatibleTransport:
         self.base_url = settings.base_url.rstrip("/")
 
     def complete_json(self, request: GroundedLLMRequest) -> tuple[dict[str, Any], ProviderMetadata]:
+        settings = get_settings()
+        require_external_call_allowed(
+            provider_name=self.provider_name,
+            provider_type=ProviderType.LLM,
+            feature_flag_name="ENABLE_REAL_LLM",
+            feature_enabled=settings.enable_real_llm,
+            required_config={
+                "LLM_API_KEY": self.settings.api_key,
+                "LLM_MODEL_NAME": self.settings.model_name,
+            },
+            allowed_environments=settings.llm_allowed_environments,
+            settings=settings,
+        )
         payload = {
             "model": self.settings.model_name,
             "response_format": {"type": "json_object"},
@@ -336,6 +352,10 @@ class OpenAICompatibleAIPipeline:
         )
 
     def _complete(self, request: GroundedLLMRequest) -> tuple[dict[str, Any], ProviderMetadata]:
+        get_usage_guard().guard_llm_request(
+            input_text=str(asdict(request)),
+            estimated_output_tokens=self.settings.max_tokens,
+        )
         validate_grounded_request(request)
         return self.transport.complete_json(request)
 

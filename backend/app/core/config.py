@@ -23,11 +23,21 @@ class Settings(BaseModel):
     enable_real_ticketing: bool = False
     enable_real_tts: bool = False
     enable_affiliate_links: bool = False
+    allow_external_calls: bool = False
+    enable_integration_tests: bool = False
+    external_call_allowed_environments: list[str] = ["production"]
     enable_auth: bool = False
     auth_provider: str = "dev"
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str | None = None
     auth_jwt_algorithms: list[str] = ["dev"]
+    auth_jwks_url: str | None = None
+    auth_provider_metadata_url: str | None = None
+    auth_user_id_claim: str = "sub"
+    auth_roles_claim: str = "roles"
+    auth_subscription_claim: str = "subscription_status"
+    auth_email_claim: str = "email"
+    auth_display_name_claim: str = "name"
     auth_required_for_user_features: bool = False
     auth_allow_dev_user_fallback: bool = True
     cors_allowed_origins: list[str] = LOCAL_CORS_ORIGINS
@@ -39,6 +49,8 @@ class Settings(BaseModel):
     llm_model_name: str = "gpt-4.1-mini"
     llm_timeout_seconds: float = 20.0
     llm_max_tokens: int = 1200
+    llm_max_input_chars: int = 12000
+    llm_max_output_tokens: int = 1200
     llm_max_retries: int = 0
     llm_monthly_budget_usd: float | None = None
     llm_allowed_environments: list[str] = ["development", "production"]
@@ -78,6 +90,13 @@ class Settings(BaseModel):
     tts_api_key: str | None = None
     tts_base_url: str = "https://example.test/tts"
     tts_timeout_seconds: float = 5.0
+    anonymous_itinerary_generations_per_day: int = 100
+    registered_user_itinerary_generations_per_day: int = 250
+    subscriber_chat_messages_per_day: int = 250
+    vector_search_max_results: int = 20
+    poi_verification_max_batch_size: int = 25
+    ticketing_lookup_max_requests_per_itinerary: int = 10
+    provider_daily_cost_ceiling_usd: float = 0.0
 
     @property
     def is_production(self) -> bool:
@@ -86,6 +105,14 @@ class Settings(BaseModel):
     @property
     def is_development_like(self) -> bool:
         return self.app_env in {"development", "test"}
+
+    @property
+    def is_deployed_environment(self) -> bool:
+        return self.app_env in {"beta", "staging", "production"}
+
+    @property
+    def is_standard_test_mode(self) -> bool:
+        return self.app_env == "test" and not self.enable_integration_tests
 
     def startup_validation_notes(self) -> list[str]:
         notes: list[str] = []
@@ -110,10 +137,35 @@ class Settings(BaseModel):
                 notes.append("AUTH_JWT_ISSUER is required when production auth is enabled.")
             if not self.auth_jwt_audience:
                 notes.append("AUTH_JWT_AUDIENCE is required when production auth is enabled.")
+            if not self.auth_jwks_url and not self.auth_provider_metadata_url:
+                notes.append(
+                    "AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL is required when "
+                    "production auth is enabled."
+                )
             if self.auth_provider == "dev":
                 notes.append("AUTH_PROVIDER=dev is not a production authentication provider.")
         if self.is_production and self.auth_allow_dev_user_fallback:
             notes.append("Development user fallback is ignored in production.")
+        if any(
+            [
+                self.enable_real_llm,
+                self.enable_real_vector_db,
+                self.enable_real_poi_provider,
+                self.enable_real_routing,
+                self.enable_real_ticketing,
+                self.enable_real_tts,
+                self.enable_affiliate_links,
+            ]
+        ) and not self.allow_external_calls:
+            notes.append(
+                "Real provider feature flags are configured, but ALLOW_EXTERNAL_CALLS=false "
+                "blocks all live external requests."
+            )
+        if self.is_standard_test_mode and self.allow_external_calls:
+            notes.append(
+                "ALLOW_EXTERNAL_CALLS is ignored during standard APP_ENV=test runs unless "
+                "ENABLE_INTEGRATION_TESTS=true."
+            )
         if self.enable_real_llm:
             if self.ai_provider != "openai_compatible":
                 notes.append(
@@ -134,6 +186,10 @@ class Settings(BaseModel):
                 notes.append("LLM_TIMEOUT_SECONDS must be positive.")
             if self.llm_max_tokens <= 0:
                 notes.append("LLM_MAX_TOKENS must be positive.")
+            if self.llm_max_input_chars <= 0:
+                notes.append("LLM_MAX_INPUT_CHARS must be positive.")
+            if self.llm_max_output_tokens <= 0:
+                notes.append("LLM_MAX_OUTPUT_TOKENS must be positive.")
             if self.llm_max_retries < 0:
                 notes.append("LLM_MAX_RETRIES cannot be negative.")
         if self.enable_real_vector_db and self.vector_db_provider == "qdrant":
@@ -215,7 +271,7 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     app_env = _normalized_app_env(os.getenv("APP_ENV", "development"))
-    default_enabled = app_env != "production"
+    default_enabled = app_env in {"development", "test"}
     cors_allowed_origins = _parse_cors_origins(
         os.getenv("CORS_ALLOWED_ORIGINS"),
         app_env=app_env,
@@ -243,11 +299,27 @@ def get_settings() -> Settings:
         enable_real_ticketing=_env_bool("ENABLE_REAL_TICKETING", False),
         enable_real_tts=_env_bool("ENABLE_REAL_TTS", False),
         enable_affiliate_links=_env_bool("ENABLE_AFFILIATE_LINKS", False),
+        allow_external_calls=_env_bool("ALLOW_EXTERNAL_CALLS", False),
+        enable_integration_tests=_env_bool("ENABLE_INTEGRATION_TESTS", False),
+        external_call_allowed_environments=_parse_csv(
+            os.getenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS"),
+            ["production"],
+        ),
         enable_auth=_env_bool("ENABLE_AUTH", False),
         auth_provider=os.getenv("AUTH_PROVIDER", "dev"),
         auth_jwt_issuer=os.getenv("AUTH_JWT_ISSUER"),
         auth_jwt_audience=os.getenv("AUTH_JWT_AUDIENCE"),
         auth_jwt_algorithms=_parse_csv(os.getenv("AUTH_JWT_ALGORITHMS"), ["dev"]),
+        auth_jwks_url=os.getenv("AUTH_JWKS_URL"),
+        auth_provider_metadata_url=os.getenv("AUTH_PROVIDER_METADATA_URL"),
+        auth_user_id_claim=os.getenv("AUTH_USER_ID_CLAIM", "sub"),
+        auth_roles_claim=os.getenv("AUTH_ROLES_CLAIM", "roles"),
+        auth_subscription_claim=os.getenv(
+            "AUTH_SUBSCRIPTION_CLAIM",
+            "subscription_status",
+        ),
+        auth_email_claim=os.getenv("AUTH_EMAIL_CLAIM", "email"),
+        auth_display_name_claim=os.getenv("AUTH_DISPLAY_NAME_CLAIM", "name"),
         auth_required_for_user_features=_env_bool(
             "AUTH_REQUIRED_FOR_USER_FEATURES",
             _env_bool("ENABLE_AUTH", False),
@@ -262,6 +334,10 @@ def get_settings() -> Settings:
         llm_model_name=os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini"),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1200")),
+        llm_max_input_chars=int(os.getenv("LLM_MAX_INPUT_CHARS", "12000")),
+        llm_max_output_tokens=int(
+            os.getenv("LLM_MAX_OUTPUT_TOKENS", os.getenv("LLM_MAX_TOKENS", "1200"))
+        ),
         llm_max_retries=int(os.getenv("LLM_MAX_RETRIES", "0")),
         llm_monthly_budget_usd=_env_float("LLM_MONTHLY_BUDGET_USD"),
         llm_allowed_environments=_parse_csv(
@@ -317,6 +393,25 @@ def get_settings() -> Settings:
         tts_api_key=os.getenv("TTS_API_KEY") or os.getenv("TEXT_TO_SPEECH_API_KEY"),
         tts_base_url=os.getenv("TTS_BASE_URL", "https://example.test/tts"),
         tts_timeout_seconds=float(os.getenv("TTS_TIMEOUT_SECONDS", "5")),
+        anonymous_itinerary_generations_per_day=int(
+            os.getenv("ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY", "100")
+        ),
+        registered_user_itinerary_generations_per_day=int(
+            os.getenv("REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY", "250")
+        ),
+        subscriber_chat_messages_per_day=int(
+            os.getenv("SUBSCRIBER_CHAT_MESSAGES_PER_DAY", "250")
+        ),
+        vector_search_max_results=int(os.getenv("VECTOR_SEARCH_MAX_RESULTS", "20")),
+        poi_verification_max_batch_size=int(
+            os.getenv("POI_VERIFICATION_MAX_BATCH_SIZE", "25")
+        ),
+        ticketing_lookup_max_requests_per_itinerary=int(
+            os.getenv("TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY", "10")
+        ),
+        provider_daily_cost_ceiling_usd=float(
+            os.getenv("PROVIDER_DAILY_COST_CEILING_USD", "0")
+        ),
     )
 
 
@@ -328,7 +423,7 @@ def database_path_from_url(database_url: str) -> Path | None:
 
 def _normalized_app_env(value: str) -> str:
     normalized = value.strip().lower()
-    if normalized in {"development", "test", "production"}:
+    if normalized in {"development", "test", "beta", "staging", "production"}:
         return normalized
     return "development"
 
