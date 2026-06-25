@@ -102,6 +102,46 @@ def test_llm_input_size_limit_blocks_large_prompts() -> None:
     assert exc_info.value.code == ProviderErrorCode.INPUT_TOO_LARGE
 
 
+def test_itinerary_duration_limit_blocks_large_requests() -> None:
+    guard = ProviderUsageGuard(
+        settings=Settings(itinerary_generation_max_days=1),
+        store=InMemoryProviderUsageStore(),
+    )
+
+    with pytest.raises(ProviderError) as exc_info:
+        guard.guard_itinerary_request_bounds(duration_days=2)
+
+    assert exc_info.value.code == ProviderErrorCode.INPUT_TOO_LARGE
+
+
+def test_live_llm_per_request_call_limit_blocks_extra_completion() -> None:
+    guard = ProviderUsageGuard(
+        settings=Settings(llm_max_live_calls_per_request=1, llm_daily_live_request_ceiling=10),
+        store=InMemoryProviderUsageStore(),
+    )
+
+    guard.guard_live_llm_completion(call_count=1)
+
+    with pytest.raises(ProviderError) as exc_info:
+        guard.guard_live_llm_completion(call_count=2)
+
+    assert exc_info.value.code == ProviderErrorCode.RATE_LIMITED
+
+
+def test_live_llm_daily_completion_ceiling_blocks_after_limit() -> None:
+    guard = ProviderUsageGuard(
+        settings=Settings(llm_max_live_calls_per_request=10, llm_daily_live_request_ceiling=1),
+        store=InMemoryProviderUsageStore(),
+    )
+
+    guard.guard_live_llm_completion(call_count=1)
+
+    with pytest.raises(ProviderError) as exc_info:
+        guard.guard_live_llm_completion(call_count=1)
+
+    assert exc_info.value.code == ProviderErrorCode.QUOTA_EXCEEDED
+
+
 def test_vector_result_limit_blocks_large_searches() -> None:
     guard = ProviderUsageGuard(
         settings=Settings(vector_search_max_results=2),

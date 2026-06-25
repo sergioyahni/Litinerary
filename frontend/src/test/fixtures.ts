@@ -21,6 +21,17 @@ export const bookFixture: Book = {
   themes: ["classic"],
 };
 
+export const sherlockBookFixture: Book = {
+  id: "sherlock-holmes",
+  destinationIds: ["london"],
+  title: "The Adventures of Sherlock Holmes",
+  author: "Arthur Conan Doyle",
+  description: "Detective stories that turn London into a map of clues.",
+  publicationYear: 1892,
+  publicDomain: true,
+  themes: ["detective", "mystery", "walking"],
+};
+
 export const itineraryFixture: Itinerary = {
   id: "it-london-oliver-twist-1-walking",
   destinationId: "london",
@@ -66,4 +77,139 @@ export const itineraryFixture: Itinerary = {
       ],
     },
   ],
+};
+
+export const sherlockItineraryFixture: Itinerary = {
+  id: "it-london-sherlock-holmes-1-walking-generated",
+  destinationId: "london",
+  bookId: "sherlock-holmes",
+  title: "The Adventures of Sherlock Holmes in London",
+  summary: "A deterministic mock itinerary candidate grounded in bundled seed data.",
+  durationDays: 1,
+  transportationMode: "walking",
+  isPublic: true,
+  generatedFrom: "new_generation",
+  sourceType: "new_mock_generation",
+  sourceItineraryId: null,
+  adaptationNotes: [],
+  createdAt: "2026-06-21T00:00:00.000Z",
+  providerName: "mock_ai",
+  providerType: "llm",
+  providerVersion: "local-mock",
+  providerRequestId: "mock-request-sherlock",
+  generatedByService: "mock_ai",
+  confidenceScore: 1,
+  provenanceMetadata: {
+    provider_name: "mock_ai",
+    provider_type: "llm",
+    provider_version: "local-mock",
+    model_name: "local-deterministic-mock",
+    warnings: ["No external LLM call was made."],
+  },
+  days: [
+    {
+      id: "day-london-sherlock-holmes-1",
+      dayNumber: 1,
+      title: "The Adventures of Sherlock Holmes: Day 1",
+      summary: "A mock walking route through Sherlock Holmes' London.",
+      estimatedDistanceKm: 0,
+      estimatedDurationHours: 0,
+      routeGeometry: [[51.5237, -0.1585]],
+      routingProviderMetadata: {
+        provider_name: "mock_routing",
+        provider_type: "routing",
+        provider_version: "local-mock",
+        warnings: ["No external routing provider call was made."],
+      },
+      routingWarnings: ["Mock routing uses straight-line estimates only."],
+      stops: [
+        {
+          id: "stop-baker-street",
+          order: 1,
+          title: "Baker Street",
+          narrativeNote: "The symbolic center of Holmes' London.",
+          logisticsNote: "Planned as a walking-friendly mock route; verify real distances later.",
+          poi: {
+            id: "baker-street",
+            destinationId: "london",
+            bookIds: ["sherlock-holmes"],
+            name: "Baker Street",
+            description: "The famous street associated with Sherlock Holmes.",
+            latitude: 51.5237,
+            longitude: -0.1585,
+            estimatedDurationMinutes: 45,
+            ticketingNote: "Street is public; nearby museum may require a ticket.",
+            literaryRelevance: "The symbolic center of Holmes' London.",
+            verificationStatus: "mock_verified",
+            verificationProvider: "local_seed_data",
+            verificationConfidence: 0.9,
+            verificationNotes: [
+              "Curated MVP seed POI for the London/Sherlock Holmes smoke-test scenario.",
+            ],
+            provenanceMetadata: {
+              sourceType: "manually_curated_location_list",
+              externalProviderUsed: false,
+              copyrightStatus: "metadata_only",
+              allowedProcessingMode: "manual_curation",
+            },
+          },
+        },
+      ],
+    },
+  ],
+};
+
+export const sherlockGenerationResponseFixture = {
+  itinerary: sherlockItineraryFixture,
+  matchedExisting: false,
+  sourceItineraryId: null,
+  message: "Generated a deterministic mock itinerary from local POI data.",
+};
+
+export const offlineReadinessFixture = {
+  status: "ready",
+  appEnv: "test",
+  checks: {
+    database: { status: "ok" },
+    providers: [
+      {
+        providerType: "llm",
+        providerName: "fake",
+        mode: "mock",
+        realEnabled: false,
+        credentialsConfigured: false,
+        requiredConfigPresent: false,
+        externalCallsAllowed: false,
+        environmentAllowed: false,
+        status: "mock",
+      },
+      {
+        providerType: "routing",
+        providerName: "mock",
+        mode: "mock",
+        realEnabled: false,
+        credentialsConfigured: false,
+        requiredConfigPresent: false,
+        externalCallsAllowed: false,
+        status: "mock",
+      },
+    ],
+    externalCalls: {
+      allowed: false,
+      integrationTestsEnabled: false,
+      stagedInternalLlmTestingEnabled: false,
+      internalAccessGateEnabled: false,
+    },
+    mockServices: { enabled: true },
+    llmOperationalLimits: {
+      maxInputChars: 12000,
+      maxOutputTokens: 1200,
+      maxLiveCallsPerRequest: 4,
+      dailyLiveRequestCeiling: 4,
+      dailyEstimatedSpendCeilingUsd: 0,
+      latencyAlertThresholdMs: 5000,
+      errorRateAlertThresholdPercent: 10,
+      itineraryGenerationMaxDays: 7,
+    },
+  },
 };

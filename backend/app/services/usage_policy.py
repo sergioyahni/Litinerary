@@ -166,6 +166,61 @@ class ProviderUsageGuard:
             estimated_tokens=_estimate_tokens(input_text),
         )
 
+    def guard_live_llm_completion(
+        self,
+        *,
+        call_count: int,
+        at: datetime | None = None,
+    ) -> None:
+        at = _utc_now(at)
+        per_request_limit = self.settings.llm_max_live_calls_per_request
+        if call_count > per_request_limit:
+            self._block(
+                provider_type=ProviderType.LLM,
+                operation_type="llm_completion",
+                at=at,
+                code=ProviderErrorCode.RATE_LIMITED,
+                message=(
+                    "Live LLM call limit exceeded for this request; maximum is "
+                    f"{per_request_limit} completion call(s)."
+                ),
+                request_count=call_count,
+            )
+
+        daily_limit = self.settings.llm_daily_live_request_ceiling
+        used = self.store.count_for_day(
+            operation_type="llm_completion",
+            day=at,
+            anonymous_session_key="live-llm-global",
+        )
+        if used >= daily_limit:
+            self._block(
+                provider_type=ProviderType.LLM,
+                operation_type="llm_completion",
+                at=at,
+                code=ProviderErrorCode.QUOTA_EXCEEDED,
+                message=f"Daily live LLM completion limit exceeded. Limit: {daily_limit} per day.",
+                anonymous_session_key="live-llm-global",
+            )
+        self._record(
+            provider_type=ProviderType.LLM,
+            operation_type="llm_completion",
+            at=at,
+            anonymous_session_key="live-llm-global",
+        )
+
+    def guard_itinerary_request_bounds(self, *, duration_days: int) -> None:
+        limit = self.settings.itinerary_generation_max_days
+        if duration_days > limit:
+            self._block(
+                provider_type=ProviderType.LLM,
+                operation_type="itinerary_generation",
+                at=_utc_now(),
+                code=ProviderErrorCode.INPUT_TOO_LARGE,
+                message=f"Itinerary duration is too large; maximum is {limit} day(s).",
+                request_count=duration_days,
+            )
+
     def guard_vector_search(self, *, limit: int, at: datetime | None = None) -> None:
         if limit > self.settings.vector_search_max_results:
             self._block(

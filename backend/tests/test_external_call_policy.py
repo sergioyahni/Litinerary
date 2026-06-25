@@ -1,6 +1,7 @@
 import pytest
 
 from app.core.config import get_settings
+from app.core.auth import JWTValidationService
 from app.core.provider_guards import require_external_call_allowed
 from app.services.mock_ai_service import get_ai_pipeline, validate_llm_startup
 from app.services.openai_compatible_llm_adapter import (
@@ -49,6 +50,7 @@ def test_real_adapter_startup_fails_safely_when_external_calls_are_disabled(
     monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "development")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.delenv("ALLOW_EXTERNAL_CALLS", raising=False)
 
     with pytest.raises(ProviderError) as exc_info:
@@ -66,6 +68,7 @@ def test_real_adapter_startup_fails_clearly_when_required_config_is_missing(
     monkeypatch.setenv("ENABLE_REAL_LLM", "true")
     monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
     monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "development")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
 
     with pytest.raises(ProviderError) as exc_info:
@@ -100,6 +103,7 @@ def test_integration_test_mode_is_explicit_opt_in(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
     monkeypatch.setenv("ENABLE_INTEGRATION_TESTS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "test")
 
     require_external_call_allowed(
         provider_name="openai_compatible",
@@ -115,6 +119,7 @@ def test_openai_http_transport_is_guarded_without_policy_opt_in(monkeypatch) -> 
     monkeypatch.delenv("ALLOW_EXTERNAL_CALLS", raising=False)
     monkeypatch.setenv("ENABLE_REAL_LLM", "true")
     monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "development")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
     transport = OpenAICompatibleTransport(
         OpenAICompatibleLLMSettings(api_key="test-key", model_name="test-model")
     )
@@ -123,6 +128,59 @@ def test_openai_http_transport_is_guarded_without_policy_opt_in(monkeypatch) -> 
         transport.complete_json(_minimal_grounded_request())
 
     assert exc_info.value.code == ProviderErrorCode.EXTERNAL_CALL_BLOCKED
+
+
+def test_llm_requires_global_external_environment_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("ENABLE_REAL_LLM", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL_NAME", "test-model")
+    monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "development")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "production")
+
+    with pytest.raises(ProviderError) as exc_info:
+        validate_llm_startup()
+
+    assert exc_info.value.code == ProviderErrorCode.EXTERNAL_CALL_BLOCKED
+    assert "Allowed environments: production" in exc_info.value.message
+
+
+def test_llm_requires_provider_specific_environment_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("ENABLE_REAL_LLM", "true")
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL_NAME", "test-model")
+    monkeypatch.setenv("LLM_ALLOWED_ENVIRONMENTS", "production")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development")
+
+    with pytest.raises(ProviderError) as exc_info:
+        validate_llm_startup()
+
+    assert exc_info.value.code == ProviderErrorCode.EXTERNAL_CALL_BLOCKED
+    assert "provider-specific configuration" in exc_info.value.message
+
+
+def test_managed_auth_jwks_lookup_is_guarded_before_network(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "oidc")
+    monkeypatch.setenv("AUTH_JWT_ISSUER", "https://auth.example.test/")
+    monkeypatch.setenv("AUTH_JWT_AUDIENCE", "litinerary-api")
+    monkeypatch.setenv("AUTH_JWT_ALGORITHMS", "RS256")
+    monkeypatch.setenv("AUTH_JWKS_URL", "https://auth.example.test/.well-known/jwks.json")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.delenv("ENABLE_INTEGRATION_TESTS", raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(ProviderError) as exc_info:
+        JWTValidationService().validate("not-a-jwt", get_settings())
+
+    assert exc_info.value.code == ProviderErrorCode.EXTERNAL_CALL_BLOCKED
+    assert "standard APP_ENV=test" in exc_info.value.message
 
 
 def _minimal_grounded_request():

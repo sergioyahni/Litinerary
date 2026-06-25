@@ -1,4 +1,6 @@
 import logging
+import json
+import re
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -136,10 +138,107 @@ def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse
         provider_type=exc.metadata.provider_type if exc.metadata else None,
         provider_name=exc.metadata.provider_name if exc.metadata else None,
     )
+    settings = get_settings()
+    detail = _safe_provider_error_detail(exc)
+    headers = None
+    if settings.app_env == "development":
+        diagnostics = _provider_error_diagnostics(exc)
+        if diagnostics:
+            detail["diagnostics"] = diagnostics
+            headers = {
+                "X-Litinerary-Provider-Diagnostics": _diagnostics_header(diagnostics)
+            }
     return JSONResponse(
         status_code=status_code,
-        content={"detail": exc.to_dict()},
+        content={"detail": detail},
+        headers=headers,
     )
 
 
 app.include_router(api_router)
+
+
+def _provider_error_diagnostics(exc: ProviderError) -> dict[str, str]:
+    metadata = exc.metadata
+    if metadata is None:
+        return {}
+    diagnostics: dict[str, str] = {
+        "provider_name": _safe_diagnostic_value(metadata.provider_name),
+        "provider_type": _safe_diagnostic_value(metadata.provider_type),
+    }
+    if metadata.request_id:
+        diagnostics["request_id"] = _safe_diagnostic_value(metadata.request_id)
+    for warning in metadata.warnings:
+        if "=" not in warning:
+            continue
+        key, value = warning.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key in {
+            "provider_reached",
+            "provider_http_status",
+            "provider_error_type",
+            "provider_error_code",
+            "failure_category",
+            "url_error_reason_type",
+            "url_error_reason_category",
+            "endpoint_kind",
+            "endpoint_host",
+            "endpoint_path",
+            "timeout_seconds",
+            "proxy_http_present",
+            "proxy_https_present",
+            "proxy_no_proxy_present",
+            "ssl_cert_file_present",
+            "ssl_cert_dir_present",
+            "requests_ca_bundle_present",
+        }:
+            diagnostics[key] = _safe_diagnostic_value(value)
+    return diagnostics
+
+
+def _safe_provider_error_detail(exc: ProviderError) -> dict:
+    detail = exc.to_dict()
+    metadata = detail.get("metadata")
+    if isinstance(metadata, dict):
+        warnings = metadata.get("warnings")
+        if isinstance(warnings, list):
+            metadata["warnings"] = [
+                warning
+                for warning in warnings
+                if isinstance(warning, str)
+                and warning.split("=", 1)[0]
+                in {
+                    "provider_reached",
+                    "provider_http_status",
+                    "provider_error_type",
+                    "provider_error_code",
+                    "failure_category",
+                    "url_error_reason_type",
+                    "url_error_reason_category",
+                    "endpoint_kind",
+                    "endpoint_host",
+                    "endpoint_path",
+                    "timeout_seconds",
+                    "proxy_http_present",
+                    "proxy_https_present",
+                    "proxy_no_proxy_present",
+                    "ssl_cert_file_present",
+                    "ssl_cert_dir_present",
+                    "requests_ca_bundle_present",
+                    "provider_request_id_present",
+                }
+                and _safe_diagnostic_value(warning.split("=", 1)[-1]) == warning.split("=", 1)[-1]
+            ]
+    return detail
+
+
+def _diagnostics_header(diagnostics: dict[str, str]) -> str:
+    compact = {key: diagnostics[key] for key in sorted(diagnostics)}
+    return json.dumps(compact, separators=(",", ":"))
+
+
+def _safe_diagnostic_value(value: str) -> str:
+    if re.fullmatch(r"[A-Za-z0-9_./:-]{1,140}", value):
+        return value
+    return "redacted"

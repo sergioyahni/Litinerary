@@ -12,6 +12,8 @@ from jwt import PyJWKClient, decode as jwt_decode
 
 from app.core.config import Settings, get_settings
 from app.core.observability import EventName, log_event
+from app.core.provider_guards import require_external_call_allowed
+from app.services.provider_contracts import ProviderType
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,21 @@ def clear_auth_caches() -> None:
 
 def _validate_managed_jwt(token: str, settings: Settings) -> CurrentUser:
     _validate_managed_auth_config(settings)
+    require_external_call_allowed(
+        provider_name=settings.auth_provider,
+        provider_type=ProviderType.AUTH,
+        feature_flag_name="ENABLE_AUTH",
+        feature_enabled=settings.enable_auth,
+        required_config={
+            "AUTH_JWT_ISSUER": settings.auth_jwt_issuer,
+            "AUTH_JWT_AUDIENCE": settings.auth_jwt_audience,
+            "AUTH_JWT_ALGORITHMS": ",".join(settings.auth_jwt_algorithms),
+            "AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL": (
+                settings.auth_jwks_url or settings.auth_provider_metadata_url
+            ),
+        },
+        settings=settings,
+    )
     try:
         signing_key = _jwks_client(_jwks_url(settings)).get_signing_key_from_jwt(token)
         claims = jwt_decode(

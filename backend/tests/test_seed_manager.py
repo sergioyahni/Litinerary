@@ -39,6 +39,32 @@ def test_seed_validation_catches_broken_relationships(db_session) -> None:
     assert any("missing-book" in error for error in report.errors)
 
 
+def test_seed_validation_rejects_poi_without_grounding_provenance(db_session) -> None:
+    payload = export_seed_data(db_session)
+    baker_street = next(poi for poi in payload.pois if poi.id == "baker-street")
+    broken_poi = baker_street.model_copy(
+        update={"verificationNotes": [], "provenanceMetadata": {}},
+        deep=True,
+    )
+    broken_payload = payload.model_copy(
+        update={
+            "pois": [
+                broken_poi if poi.id == "baker-street" else poi
+                for poi in payload.pois
+            ]
+        },
+        deep=True,
+    )
+
+    report = validate_seed_data(broken_payload)
+
+    assert report.valid is False
+    assert any(
+        "baker-street" in error and "grounding provenance" in error
+        for error in report.errors
+    )
+
+
 def test_admin_seed_export_import_and_validate(client) -> None:
     export_response = client.get("/api/admin/seed/export")
 

@@ -40,6 +40,8 @@ def managed_auth_private_key(monkeypatch):
 
 def enable_managed_auth(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development,test")
     monkeypatch.setenv("AUTH_REQUIRED_FOR_USER_FEATURES", "true")
     monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
     monkeypatch.setenv("AUTH_PROVIDER", "oidc")

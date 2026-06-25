@@ -109,9 +109,8 @@ def require_external_call_allowed(
             metadata=metadata,
         )
 
-    integration_test_mode = resolved.app_env == "test" and resolved.enable_integration_tests
-    allowed = list(allowed_environments or resolved.external_call_allowed_environments)
-    if not integration_test_mode and resolved.app_env not in allowed:
+    global_allowed = list(resolved.external_call_allowed_environments)
+    if resolved.app_env not in global_allowed:
         log_provider_blocked(
             provider_type=provider_type_value,
             provider_name=provider_name,
@@ -121,7 +120,25 @@ def require_external_call_allowed(
             ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
             (
                 f"External calls for provider '{provider_name}' are not allowed in "
-                f"APP_ENV={resolved.app_env}. Allowed environments: {', '.join(allowed)}."
+                f"APP_ENV={resolved.app_env}. Allowed environments: "
+                f"{', '.join(global_allowed)}."
+            ),
+            metadata=metadata,
+        )
+
+    provider_allowed = list(allowed_environments or global_allowed)
+    if resolved.app_env not in provider_allowed:
+        log_provider_blocked(
+            provider_type=provider_type_value,
+            provider_name=provider_name,
+            reason=ProviderErrorCode.EXTERNAL_CALL_BLOCKED.value,
+        )
+        raise ProviderError(
+            ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
+            (
+                f"External calls for provider '{provider_name}' are not allowed by "
+                f"provider-specific configuration in APP_ENV={resolved.app_env}. "
+                f"Allowed environments: {', '.join(provider_allowed)}."
             ),
             metadata=metadata,
         )

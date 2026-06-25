@@ -6,6 +6,7 @@ from uuid import uuid4
 
 
 class ProviderType(StrEnum):
+    AUTH = "auth"
     LLM = "llm"
     EMBEDDING = "embedding"
     VECTOR_DB = "vector_db"

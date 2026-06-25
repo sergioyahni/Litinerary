@@ -212,7 +212,19 @@ POIS: list[POI] = [
         estimatedDurationMinutes=45,
         ticketingNote="Street is public; nearby museum may require a ticket.",
         literaryRelevance="The symbolic center of Holmes' London.",
-        verificationStatus="mock",
+        verificationStatus="mock_verified",
+        verificationProvider="local_seed_data",
+        verificationConfidence=0.9,
+        verificationNotes=[
+            "Curated MVP seed POI for the London/Sherlock Holmes smoke-test scenario.",
+            "Coordinates and public-street access are manually checked for local demo grounding.",
+        ],
+        provenanceMetadata={
+            "sourceType": "manually_curated_location_list",
+            "externalProviderUsed": False,
+            "copyrightStatus": "metadata_only",
+            "allowedProcessingMode": "manual_curation",
+        },
     ),
     POI(
         id="louvre",

@@ -37,6 +37,8 @@ $env:DEBUG="true"
 $env:ENABLE_ADMIN_ROUTES="true"
 $env:ENABLE_DEBUG_ROUTES="true"
 $env:ENABLE_MOCK_SERVICES="true"
+$env:ENABLE_STAGED_INTERNAL_LLM_TESTING="false"
+$env:ENABLE_INTERNAL_ACCESS_GATE="false"
 $env:ENABLE_REAL_LLM="false"
 $env:ENABLE_REAL_VECTOR_DB="false"
 $env:ENABLE_REAL_POI_PROVIDER="false"
@@ -58,7 +60,7 @@ Production expectations:
 - Leave `ENABLE_DEBUG_ROUTES=false`.
 - Leave `ENABLE_MOCK_SERVICES=false` unless intentionally running a protected mock environment.
 - Leave all `ENABLE_REAL_*` provider flags disabled until the matching adapter contract tests, cost controls, secrets, and monitoring are in place.
-- Leave `ENABLE_AUTH=false` until a real provider is configured. When enabling auth, configure `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`.
+- Leave `ENABLE_AUTH=false` until a real provider is configured. When enabling auth, configure `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`. Managed-auth JWKS/provider metadata lookups are live external calls and remain blocked unless `ALLOW_EXTERNAL_CALLS=true` and the current `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - Never use `AUTH_PROVIDER=dev` as production authentication.
 - Keep provider credentials out of the repository.
 
@@ -71,6 +73,10 @@ Beta/staging dry-run expectations:
 - Keep all real provider flags and `ALLOW_EXTERNAL_CALLS` disabled.
 - Use exact `CORS_ALLOWED_ORIGINS`.
 - Keep provider credentials empty unless a future live integration gate explicitly approves them.
+
+Staged internal live LLM testing uses `APP_ENV=internal` and is still no-go. The environment label exists only so staged-internal configuration can fail closed: live LLM calls require `ENABLE_STAGED_INTERNAL_LLM_TESTING=true` and `ENABLE_INTERNAL_ACCESS_GATE=true` in addition to every normal LLM and external-call gate. Do not set either flag for local mock/demo runs, controlled smoke tests, beta, staging, or production unless a later readiness review approves the staged internal test.
+
+For controlled local live LLM smoke testing, prefer copying `.env.development.local.example` to ignored `.env.development.local`. The preflight script loads `.env.development.local` first, then `.env.local`, and reports only boolean credential presence. Use `scripts/live_llm_smoke_backend.ps1` from the repository root to start the backend with the same local env source after preflight passes.
 
 Validate beta configuration from this directory:
 
@@ -99,6 +105,7 @@ Auth foundation variables:
 - `AUTH_PROVIDER`: `dev` for local/test tokens, or a provider label such as `oidc` for managed JWT validation.
 - `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`: required for managed-provider JWT validation.
 - `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`: required for managed-provider signature validation.
+- Managed-provider JWKS/provider metadata requests follow the global external-call policy: keep `ALLOW_EXTERNAL_CALLS=false` for standard local/test/demo runs.
 - Claim mapping: `AUTH_USER_ID_CLAIM`, `AUTH_ROLES_CLAIM`, `AUTH_SUBSCRIPTION_CLAIM`, `AUTH_EMAIL_CLAIM`, and `AUTH_DISPLAY_NAME_CLAIM`.
 - `AUTH_ALLOW_DEV_USER_FALLBACK`: allows missing-token fallback to `dev-reader` only in development/test; deployed environments reject it.
 
@@ -194,20 +201,47 @@ The mock pipeline uses catalog summaries, public-domain-safe placeholders, and l
 OpenAI-compatible adapter enablement for later integration:
 
 ```powershell
+$env:APP_ENV="development"
 $env:ENABLE_REAL_LLM="true"
+$env:ALLOW_EXTERNAL_CALLS="true"
+$env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS="development"
+$env:LITINERARY_AI_PROVIDER="openai_compatible"
 $env:LLM_PROVIDER="openai_compatible"
 $env:LLM_API_KEY="<secret>"
 $env:LLM_MODEL_NAME="gpt-4.1-mini"
+$env:LLM_ALLOWED_ENVIRONMENTS="development"
 ```
+
+This is approved only for controlled non-production smoke testing. Leave `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_AFFILIATE_LINKS`, `ENABLE_REAL_TTS`, and managed-auth live-provider behavior disabled unless each boundary is separately configured and approved.
+
+Required live LLM gates:
+
+- `ENABLE_REAL_LLM=true`
+- `LITINERARY_AI_PROVIDER=openai_compatible` or `LLM_PROVIDER=openai_compatible`
+- `LLM_API_KEY` from environment/secret storage only
+- `LLM_MODEL_NAME`
+- `ALLOW_EXTERNAL_CALLS=true`
+- Current `APP_ENV` listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`
+- Current `APP_ENV` listed in `LLM_ALLOWED_ENVIRONMENTS`
 
 Optional settings:
 
 - `LLM_BASE_URL`, default `https://api.openai.com/v1`
 - `LLM_TIMEOUT_SECONDS`, default `20`
 - `LLM_MAX_TOKENS`, default `1200`
+- `LLM_OUTPUT_TOKEN_PARAMETER`, default `max_tokens`; use `max_completion_tokens`
+  for GPT-5-family Chat Completions models.
 - `LLM_MAX_RETRIES`, default `0`
 - `LLM_MONTHLY_BUDGET_USD`, placeholder for future spend enforcement
-- `LLM_ALLOWED_ENVIRONMENTS`, default `development,production`; `APP_ENV=test` is always blocked
+- `LLM_MAX_LIVE_CALLS_PER_REQUEST`, default `4`
+- `LLM_DAILY_LIVE_REQUEST_CEILING`, default `4`
+- `LLM_DAILY_ESTIMATED_SPEND_CEILING_USD`, placeholder for future spend monitoring
+- `LLM_LATENCY_ALERT_THRESHOLD_MS`, default `5000`
+- `LLM_ERROR_RATE_ALERT_THRESHOLD_PERCENT`, default `10`
+- `LLM_ALLOWED_ENVIRONMENTS`, default `development,production`; standard `APP_ENV=test` is blocked unless `ENABLE_INTEGRATION_TESTS=true` and both environment allow-lists include `test`
+- `APP_ENV=internal` requires `ENABLE_STAGED_INTERNAL_LLM_TESTING=true` and `ENABLE_INTERNAL_ACCESS_GATE=true`, and remains no-go until staged-readiness blockers are closed
+
+Public or beta user-facing live LLM itinerary generation is still not approved. Before that, add production auth, durable rate and cost enforcement, monitoring/alerting, staged provider runbooks, and validation of POI/routing quality under realistic inputs.
 
 Grounding rules run before any real LLM provider call:
 

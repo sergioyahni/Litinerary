@@ -18,11 +18,28 @@ def provider_status(settings: Settings | None = None) -> list[dict[str, Any]]:
     resolved = settings or get_settings()
     return [
         _status(
+            provider_type="auth",
+            provider_name=resolved.auth_provider,
+            real_enabled=resolved.enable_auth and resolved.auth_provider != "dev",
+            credentials_configured=bool(
+                resolved.auth_jwt_issuer
+                and resolved.auth_jwt_audience
+                and resolved.auth_jwt_algorithms
+                and (resolved.auth_jwks_url or resolved.auth_provider_metadata_url)
+            ),
+            external_calls_allowed=resolved.allow_external_calls,
+        ),
+        _status(
             provider_type="llm",
             provider_name=resolved.llm_provider,
             real_enabled=resolved.enable_real_llm,
             credentials_configured=bool(resolved.llm_api_key),
             external_calls_allowed=resolved.allow_external_calls,
+            required_configured=bool(resolved.llm_api_key and resolved.llm_model_name),
+            environment_allowed=(
+                resolved.app_env in resolved.external_call_allowed_environments
+                and resolved.app_env in resolved.llm_allowed_environments
+            ),
         ),
         _status(
             provider_type="vector_db",
@@ -83,9 +100,21 @@ def readiness_payload(db: Session, settings: Settings | None = None) -> dict[str
             "externalCalls": {
                 "allowed": resolved.allow_external_calls,
                 "integrationTestsEnabled": resolved.enable_integration_tests,
+                "stagedInternalLlmTestingEnabled": resolved.enable_staged_internal_llm_testing,
+                "internalAccessGateEnabled": resolved.enable_internal_access_gate,
             },
             "mockServices": {
                 "enabled": resolved.enable_mock_services,
+            },
+            "llmOperationalLimits": {
+                "maxInputChars": resolved.llm_max_input_chars,
+                "maxOutputTokens": resolved.llm_max_output_tokens,
+                "maxLiveCallsPerRequest": resolved.llm_max_live_calls_per_request,
+                "dailyLiveRequestCeiling": resolved.llm_daily_live_request_ceiling,
+                "dailyEstimatedSpendCeilingUsd": resolved.llm_daily_estimated_spend_ceiling_usd,
+                "latencyAlertThresholdMs": resolved.llm_latency_alert_threshold_ms,
+                "errorRateAlertThresholdPercent": resolved.llm_error_rate_alert_threshold_percent,
+                "itineraryGenerationMaxDays": resolved.itinerary_generation_max_days,
             },
         },
     }
@@ -98,14 +127,24 @@ def _status(
     real_enabled: bool,
     credentials_configured: bool,
     external_calls_allowed: bool,
+    required_configured: bool | None = None,
+    environment_allowed: bool | None = None,
 ) -> dict[str, Any]:
     mode = "real" if real_enabled else "mock"
-    return {
+    payload = {
         "providerType": provider_type,
         "providerName": provider_name,
         "mode": mode,
         "realEnabled": real_enabled,
         "credentialsConfigured": credentials_configured,
+        "requiredConfigPresent": credentials_configured
+        if required_configured is None
+        else required_configured,
         "externalCallsAllowed": external_calls_allowed,
-        "status": "configured" if real_enabled and credentials_configured else "mock",
+        "status": "configured"
+        if real_enabled and (credentials_configured if required_configured is None else required_configured)
+        else "mock",
     }
+    if environment_allowed is not None:
+        payload["environmentAllowed"] = environment_allowed
+    return payload

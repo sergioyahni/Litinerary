@@ -14,6 +14,7 @@ from app.schemas.domain import (
 )
 from app.services import database_repository as db_repository
 from app.services.mock_ai_service import get_ai_pipeline
+from app.services.openai_compatible_llm_adapter import live_llm_request_scope
 from app.services.routing_service import enrich_itinerary_routes
 from app.services.usage_policy import get_usage_guard
 
@@ -126,7 +127,9 @@ def generate_itinerary(
     user_id: str | None = None,
     anonymous_session_key: str | None = "anonymous",
 ) -> ItineraryGenerationResponse:
-    get_usage_guard().guard_itinerary_generation(
+    usage_guard = get_usage_guard()
+    usage_guard.guard_itinerary_request_bounds(duration_days=request.durationDays)
+    usage_guard.guard_itinerary_generation(
         user_id=user_id,
         anonymous_session_key=anonymous_session_key,
     )
@@ -158,9 +161,10 @@ def generate_itinerary(
 
     partial_match = _find_partial_itinerary(request, db=db)
     if partial_match is not None:
-        itinerary = _adapt_itinerary(partial_match, request)
-        itinerary = enrich_itinerary_routes(itinerary)
-        _ensure_ai_approved(itinerary)
+        with live_llm_request_scope():
+            itinerary = _adapt_itinerary(partial_match, request)
+            itinerary = enrich_itinerary_routes(itinerary)
+            _ensure_ai_approved(itinerary)
         _save_itinerary_once(itinerary, db=db)
         return ItineraryGenerationResponse(
             itinerary=itinerary,
@@ -176,14 +180,15 @@ def generate_itinerary(
         )
 
     ai_pipeline = get_ai_pipeline()
-    itinerary = ai_pipeline.generate_candidate_itinerary(
-        destination=destination,
-        book=book,
-        pois=candidate_pois,
-        request=request,
-    )
-    itinerary = enrich_itinerary_routes(itinerary)
-    _ensure_ai_approved(itinerary)
+    with live_llm_request_scope():
+        itinerary = ai_pipeline.generate_candidate_itinerary(
+            destination=destination,
+            book=book,
+            pois=candidate_pois,
+            request=request,
+        )
+        itinerary = enrich_itinerary_routes(itinerary)
+        _ensure_ai_approved(itinerary)
     _save_itinerary_once(itinerary, db=db)
 
     return ItineraryGenerationResponse(
@@ -197,6 +202,7 @@ def adapt_itinerary(
     request: ItineraryAdaptationRequest,
     db: Session | None = None,
 ) -> ItineraryGenerationResponse:
+    get_usage_guard().guard_itinerary_request_bounds(duration_days=request.durationDays)
     source = get_itinerary(request.sourceItineraryId, db=db)
     generation_request = ItineraryGenerationRequest(
         destinationId=source.destinationId,
@@ -204,9 +210,10 @@ def adapt_itinerary(
         durationDays=request.durationDays,
         transportationMode=request.transportationMode,
     )
-    itinerary = _adapt_itinerary(source, generation_request)
-    itinerary = enrich_itinerary_routes(itinerary)
-    _ensure_ai_approved(itinerary)
+    with live_llm_request_scope():
+        itinerary = _adapt_itinerary(source, generation_request)
+        itinerary = enrich_itinerary_routes(itinerary)
+        _ensure_ai_approved(itinerary)
     _save_itinerary_once(itinerary, db=db)
 
     return ItineraryGenerationResponse(

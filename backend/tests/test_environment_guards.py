@@ -101,6 +101,29 @@ def test_beta_environment_defaults_are_deployment_safe(client, monkeypatch) -> N
     assert debug_response.status_code == 403
 
 
+def test_internal_environment_defaults_are_deployment_safe(client, monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "internal")
+    monkeypatch.delenv("ENABLE_ADMIN_ROUTES", raising=False)
+    monkeypatch.delenv("ENABLE_DEBUG_ROUTES", raising=False)
+    monkeypatch.delenv("ENABLE_STAGED_INTERNAL_LLM_TESTING", raising=False)
+    monkeypatch.delenv("DEBUG", raising=False)
+    get_settings.cache_clear()
+
+    settings = get_settings()
+    admin_response = client.get("/api/admin/seed/validate")
+    debug_response = client.get("/api/users/dev-reader/recommendations/mock")
+
+    assert settings.app_env == "internal"
+    assert settings.debug is False
+    assert settings.enable_admin_routes is False
+    assert settings.enable_debug_routes is False
+    assert settings.enable_mock_services is False
+    assert settings.enable_staged_internal_llm_testing is False
+    assert settings.enable_internal_access_gate is False
+    assert admin_response.status_code == 403
+    assert debug_response.status_code == 403
+
+
 def test_cors_wildcard_is_ignored_in_production(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "*,https://litinerary.example")

@@ -49,14 +49,14 @@ Backend configuration is centralized in `backend/app/core/config.py`. Local deve
 
 Supported environment variables:
 
-- `APP_ENV`: `development`, `test`, or `production`. Defaults to `development`.
+- `APP_ENV`: `development`, `test`, `internal`, `beta`, `staging`, or `production`. Defaults to `development`. `internal` is reserved for staged internal testing and is not enabled by default.
 - `DEBUG`: defaults to `true` outside production and `false` in production.
 - `ENABLE_ADMIN_ROUTES`: enables `/api/admin/*` routes. Defaults to `true` outside production and `false` in production.
 - `ENABLE_DEBUG_ROUTES`: enables development/debug routes such as `GET /api/users/{user_id}/recommendations/mock`. Defaults to `true` outside production and `false` in production.
 - `ENABLE_MOCK_SERVICES`: allows fake/mock AI, vector, and POI verification services. Defaults to `true` outside production and `false` in production.
 - Real provider feature flags: `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS`. All default to `false`.
-- External-call safety: `ALLOW_EXTERNAL_CALLS=false` blocks live provider requests even if a real provider flag is accidentally enabled. `ENABLE_INTEGRATION_TESTS=false` keeps standard `APP_ENV=test` runs blocked. `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` means development and test runs cannot call live providers unless explicitly added for a deliberate integration test run.
-- Local usage guardrails: `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`, `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`, `LLM_MAX_INPUT_CHARS`, `LLM_MAX_OUTPUT_TOKENS`, `VECTOR_SEARCH_MAX_RESULTS`, `POI_VERIFICATION_MAX_BATCH_SIZE`, `ROUTING_MAX_STOPS`, `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`, and `PROVIDER_DAILY_COST_CEILING_USD`. These are mock/local controls, not billing.
+- External-call safety: `ALLOW_EXTERNAL_CALLS=false` blocks live provider requests even if a real provider flag is accidentally enabled. This includes managed-auth JWKS/provider metadata lookups when `AUTH_PROVIDER` is not `dev`. `ENABLE_INTEGRATION_TESTS=false` keeps standard `APP_ENV=test` runs blocked. `ENABLE_STAGED_INTERNAL_LLM_TESTING=false` and `ENABLE_INTERNAL_ACCESS_GATE=false` keep `APP_ENV=internal` live LLM usage blocked unless explicitly approved later. `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` means development and test runs cannot call live providers unless explicitly added for a deliberate integration test run.
+- Local usage guardrails: `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`, `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`, `ITINERARY_GENERATION_MAX_DAYS`, `LLM_MAX_INPUT_CHARS`, `LLM_MAX_OUTPUT_TOKENS`, `LLM_MAX_LIVE_CALLS_PER_REQUEST`, `LLM_DAILY_LIVE_REQUEST_CEILING`, `VECTOR_SEARCH_MAX_RESULTS`, `POI_VERIFICATION_MAX_BATCH_SIZE`, `ROUTING_MAX_STOPS`, `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`, and `PROVIDER_DAILY_COST_CEILING_USD`. These are mock/local controls, not durable billing.
 - Auth flags: `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_JWKS_URL`, `AUTH_PROVIDER_METADATA_URL`, claim mapping variables, `AUTH_REQUIRED_FOR_USER_FEATURES`, and `AUTH_ALLOW_DEV_USER_FALLBACK`.
 - `CORS_ALLOWED_ORIGINS`: comma-separated frontend origins. Local default is `http://localhost:5173,http://127.0.0.1:5173`; production default is empty and wildcard origins are ignored.
 - Provider placeholders: `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_NAME`, `LLM_BASE_URL`, `VECTOR_DB_PROVIDER`, `VECTOR_DB_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `POI_PROVIDER`, `POI_VERIFICATION_PROVIDER`, `POI_PROVIDER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `POI_VERIFICATION_API_KEY`, `ROUTING_PROVIDER`, `ROUTING_API_KEY`, `OPENROUTESERVICE_API_KEY`, `TICKETING_PROVIDER`, `TICKETING_API_KEY`.
@@ -89,6 +89,7 @@ APP_ENV=test
 ENABLE_INTEGRATION_TESTS=true
 ALLOW_EXTERNAL_CALLS=true
 ENABLE_REAL_<PROVIDER>=true
+EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=test
 ```
 
 Current auth foundation:
@@ -96,7 +97,7 @@ Current auth foundation:
 - Auth is disabled by default, so anonymous destination/book browsing, public repository browsing, and basic public itinerary generation still work.
 - When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user-specific endpoints require a bearer token.
 - Local/test development supports mock bearer tokens: `dev:<user_id>:<roles>:<subscription_status>`.
-- Managed JWT validation is available for non-`dev` providers using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`.
+- Managed JWT validation is available for non-`dev` providers using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`; JWKS/provider metadata retrieval is blocked unless `ALLOW_EXTERNAL_CALLS=true` and `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - `GET /api/me` syncs the current authenticated subject to a local user profile.
 - Development fallback to `dev-reader` is allowed only in development/test when `AUTH_ALLOW_DEV_USER_FALLBACK=true`; beta/staging/production reject it.
 - Production must not use `AUTH_PROVIDER=dev`; configure and stage-test a managed provider before enabling production auth.
@@ -161,15 +162,36 @@ Local development still uses `LITINERARY_AI_PROVIDER=fake` and `ENABLE_REAL_LLM=
 The first real LLM boundary is an OpenAI-compatible JSON adapter. It is provider-neutral at the Litinerary service layer and can later point at OpenAI, Azure OpenAI, or a compatible gateway through `LLM_BASE_URL`:
 
 ```powershell
+$env:APP_ENV="development"
 $env:ENABLE_REAL_LLM="true"
+$env:ALLOW_EXTERNAL_CALLS="true"
+$env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS="development"
+$env:LITINERARY_AI_PROVIDER="openai_compatible"
 $env:LLM_PROVIDER="openai_compatible"
 $env:LLM_API_KEY="<secret>"
 $env:LLM_MODEL_NAME="gpt-4.1-mini"
+$env:LLM_ALLOWED_ENVIRONMENTS="development"
 ```
 
-Optional settings include `LLM_BASE_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`, `LLM_MAX_RETRIES`, `LLM_MONTHLY_BUDGET_USD`, and `LLM_ALLOWED_ENVIRONMENTS`. `APP_ENV=test` blocks real LLM startup even if the flag is set.
+Required live LLM gates are `ENABLE_REAL_LLM=true`, `LITINERARY_AI_PROVIDER=openai_compatible` or `LLM_PROVIDER=openai_compatible`, `LLM_API_KEY`, `LLM_MODEL_NAME`, `ALLOW_EXTERNAL_CALLS=true`, and an `APP_ENV` present in both `LLM_ALLOWED_ENVIRONMENTS` and `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`. Secrets must come from environment or secret storage; do not place real keys in source files, examples, tests, logs, or shell history you intend to share.
+
+Optional settings include `LLM_BASE_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`, `LLM_MAX_RETRIES`, `LLM_MONTHLY_BUDGET_USD`, `LLM_ALLOWED_ENVIRONMENTS`, `LLM_MAX_LIVE_CALLS_PER_REQUEST`, `LLM_DAILY_LIVE_REQUEST_CEILING`, `LLM_DAILY_ESTIMATED_SPEND_CEILING_USD`, `LLM_LATENCY_ALERT_THRESHOLD_MS`, and `LLM_ERROR_RATE_ALERT_THRESHOLD_PERCENT`. Standard `APP_ENV=test` runs block real LLM startup unless `ENABLE_INTEGRATION_TESTS=true`, and even then the environment must be present in both allow-lists. `APP_ENV=internal` also requires `ENABLE_STAGED_INTERNAL_LLM_TESTING=true` and `ENABLE_INTERNAL_ACCESS_GATE=true`; staged internal testing is still no-go until the readiness blockers are closed.
 
 Before any real LLM transport call, grounding checks require safe source types, reject full-text metadata fields, block copyrighted full text, require source licensing/copyright context where relevant, and require POIs to have usable coordinates plus verification/provenance context. Judge validation returns structured reasons, warnings, confidence, and required fixes. Standard tests inject fake LLM transports and do not make network calls.
+
+Controlled non-production LLM smoke testing is allowed only with the gates above and with vector DB, POI, routing, ticketing, affiliate, TTS, and managed auth live-provider flags left disabled unless separately approved. Public or beta user-facing live LLM itinerary generation remains blocked pending production auth, durable rate/cost controls, provider observability, and staged POI/routing validation.
+
+Live LLM operational documents:
+
+- `docs/live-llm-smoke-test-runbook.md`
+- `docs/live-llm-operational-controls.md`
+- `docs/live-llm-smoke-test-evidence-template.md`
+- `docs/live-llm-rollback-drill.md`
+- `docs/generated-itinerary-quality-review-template.md`
+- `docs/internal-live-llm-test-plan.md`
+- `docs/internal-staged-testing-readiness-report.md`
+
+For local credential handoff before a controlled smoke test, prefer copying `.env.development.local.example` to ignored `.env.development.local`, then run `scripts/live_llm_smoke_preflight.ps1`. The backend can be started for that smoke window with `scripts/live_llm_smoke_backend.ps1`, which loads the same ignored local file after preflight passes.
 
 ## POI Verification Provider Boundary
 
@@ -235,7 +257,7 @@ Destructive seed-data routes, including `POST /api/admin/seed/reset` and `POST /
 
 Backend observability is local-only by default. API responses include an `X-Request-ID` header, request start/end events are logged through the `litinerary` logger, and provider telemetry hooks record provider type, provider name, operation, success/failure, latency, warning count, estimated cost, and error type when available. Logs must not include secrets, raw prompts, copyrighted text, bearer tokens, or provider credentials.
 
-`GET /api/readiness` returns safe beta-readiness checks for database connectivity, mock/real provider mode, feature flags, external-call policy, and whether provider credentials are configured. It exposes booleans only for credentials and never returns secret values.
+`GET /api/readiness` returns safe beta-readiness checks for database connectivity, mock/real provider mode, feature flags, external-call policy, whether provider credentials and required non-secret config are present, and whether the selected LLM environment gates are satisfied. It exposes booleans only for credentials and never returns secret values.
 
 ## Running the App Locally
 

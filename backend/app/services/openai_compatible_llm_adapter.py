@@ -1,8 +1,15 @@
 from dataclasses import asdict, dataclass
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
+import os
+import re
+import socket
+import ssl
 from time import monotonic
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from app.core.config import get_settings
@@ -31,6 +38,9 @@ from app.services.provider_contracts import (
 from app.services.usage_policy import get_usage_guard
 
 
+_live_llm_call_count: ContextVar[int] = ContextVar("live_llm_call_count", default=0)
+
+
 class LLMTransport(Protocol):
     def complete_json(self, request: GroundedLLMRequest) -> tuple[dict[str, Any], ProviderMetadata]:
         """Return provider-normalized JSON without exposing raw payloads."""
@@ -43,6 +53,7 @@ class OpenAICompatibleLLMSettings:
     model_name: str = "gpt-4.1-mini"
     timeout_seconds: float = 20.0
     max_tokens: int = 1200
+    output_token_parameter: str = "max_tokens"
     max_retries: int = 0
     monthly_budget_usd: float | None = None
     allowed_environments: list[str] | None = None
@@ -58,6 +69,22 @@ class OpenAICompatibleTransport:
 
     def complete_json(self, request: GroundedLLMRequest) -> tuple[dict[str, Any], ProviderMetadata]:
         settings = get_settings()
+        if settings.is_staged_internal and not settings.enable_staged_internal_llm_testing:
+            raise _provider_error(
+                ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
+                (
+                    "APP_ENV=internal live LLM calls require "
+                    "ENABLE_STAGED_INTERNAL_LLM_TESTING=true."
+                ),
+            )
+        if settings.is_staged_internal and not settings.enable_internal_access_gate:
+            raise _provider_error(
+                ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
+                (
+                    "APP_ENV=internal live LLM calls require "
+                    "ENABLE_INTERNAL_ACCESS_GATE=true."
+                ),
+            )
         require_external_call_allowed(
             provider_name=self.provider_name,
             provider_type=ProviderType.LLM,
@@ -73,7 +100,6 @@ class OpenAICompatibleTransport:
         payload = {
             "model": self.settings.model_name,
             "response_format": {"type": "json_object"},
-            "max_tokens": self.settings.max_tokens,
             "messages": [
                 {
                     "role": "system",
@@ -88,6 +114,7 @@ class OpenAICompatibleTransport:
                 },
             ],
         }
+        payload[self.settings.output_token_parameter] = self.settings.max_tokens
         body = json.dumps(payload).encode("utf-8")
         http_request = Request(
             f"{self.base_url}/chat/completions",
@@ -104,19 +131,51 @@ class OpenAICompatibleTransport:
                 response_body = response.read().decode("utf-8")
                 request_id = response.headers.get("x-request-id")
         except HTTPError as exc:
+            latency_ms = round((monotonic() - started) * 1000)
+            details = _http_error_diagnostics(exc, base_url=self.base_url)
             if exc.code == 429:
                 raise _provider_error(
                     ProviderErrorCode.RATE_LIMITED,
                     "LLM provider rate limit was exceeded.",
+                    latency_ms=latency_ms,
+                    request_id=details["request_id"],
+                    warnings=details["warnings"],
                 ) from exc
             raise _provider_error(
                 ProviderErrorCode.INVALID_RESPONSE,
                 f"LLM provider returned HTTP {exc.code}.",
+                latency_ms=latency_ms,
+                request_id=details["request_id"],
+                warnings=details["warnings"],
             ) from exc
         except TimeoutError as exc:
-            raise _provider_error(ProviderErrorCode.TIMEOUT, "LLM provider request timed out.") from exc
+            latency_ms = round((monotonic() - started) * 1000)
+            raise _provider_error(
+                ProviderErrorCode.TIMEOUT,
+                "LLM provider request timed out.",
+                latency_ms=latency_ms,
+                warnings=[
+                    *_endpoint_warnings(self.base_url),
+                    "provider_reached=unknown",
+                    "failure_category=timeout",
+                ],
+            ) from exc
         except URLError as exc:
-            raise _provider_error(ProviderErrorCode.UNAVAILABLE, "LLM provider is unavailable.") from exc
+            latency_ms = round((monotonic() - started) * 1000)
+            raise _provider_error(
+                ProviderErrorCode.UNAVAILABLE,
+                "LLM provider is unavailable.",
+                latency_ms=latency_ms,
+                warnings=[
+                    *_endpoint_warnings(self.base_url),
+                    "provider_reached=false",
+                    "failure_category=url_error",
+                    f"url_error_reason_type={_url_error_reason_type(exc.reason)}",
+                    f"url_error_reason_category={_url_error_reason_category(exc.reason)}",
+                    f"timeout_seconds={_safe_number(self.settings.timeout_seconds)}",
+                    *_network_environment_warnings(),
+                ],
+            ) from exc
 
         latency_ms = round((monotonic() - started) * 1000)
         try:
@@ -128,6 +187,12 @@ class OpenAICompatibleTransport:
                 ProviderErrorCode.INVALID_RESPONSE,
                 "LLM provider returned an invalid JSON response.",
                 latency_ms=latency_ms,
+                request_id=request_id,
+                warnings=[
+                    *_endpoint_warnings(self.base_url),
+                    "provider_reached=true",
+                    "failure_category=response_parse_error",
+                ],
             ) from exc
 
         return parsed, _metadata(
@@ -156,6 +221,11 @@ class OpenAICompatibleAIPipeline:
             raise _provider_error(ProviderErrorCode.NOT_CONFIGURED, "LLM timeout must be positive.")
         if settings.max_tokens <= 0:
             raise _provider_error(ProviderErrorCode.NOT_CONFIGURED, "LLM max tokens must be positive.")
+        if settings.output_token_parameter not in {"max_tokens", "max_completion_tokens"}:
+            raise _provider_error(
+                ProviderErrorCode.NOT_CONFIGURED,
+                "LLM output token parameter must be max_tokens or max_completion_tokens.",
+            )
         if settings.max_retries < 0:
             raise _provider_error(ProviderErrorCode.NOT_CONFIGURED, "LLM max retries cannot be negative.")
         self.settings = settings
@@ -352,11 +422,31 @@ class OpenAICompatibleAIPipeline:
         )
 
     def _complete(self, request: GroundedLLMRequest) -> tuple[dict[str, Any], ProviderMetadata]:
+        settings = get_settings()
+        if settings.is_staged_internal and not settings.enable_staged_internal_llm_testing:
+            raise _provider_error(
+                ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
+                (
+                    "APP_ENV=internal live LLM calls require "
+                    "ENABLE_STAGED_INTERNAL_LLM_TESTING=true."
+                ),
+            )
+        if settings.is_staged_internal and not settings.enable_internal_access_gate:
+            raise _provider_error(
+                ProviderErrorCode.EXTERNAL_CALL_BLOCKED,
+                (
+                    "APP_ENV=internal live LLM calls require "
+                    "ENABLE_INTERNAL_ACCESS_GATE=true."
+                ),
+            )
         get_usage_guard().guard_llm_request(
             input_text=str(asdict(request)),
             estimated_output_tokens=self.settings.max_tokens,
         )
         validate_grounded_request(request)
+        get_usage_guard().guard_live_llm_completion(
+            call_count=_next_live_llm_call_number(),
+        )
         return self.transport.complete_json(request)
 
     def _metadata(
@@ -383,6 +473,21 @@ def _book_summary_source(book: Book) -> GroundingSource:
         allowed_processing_mode="summary_only",
         source_notes=["Catalog summary only; no full text included."],
     )
+
+
+@contextmanager
+def live_llm_request_scope():
+    token = _live_llm_call_count.set(0)
+    try:
+        yield
+    finally:
+        _live_llm_call_count.reset(token)
+
+
+def _next_live_llm_call_number() -> int:
+    count = _live_llm_call_count.get() + 1
+    _live_llm_call_count.set(count)
+    return count
 
 
 def _itinerary_from_response(
@@ -487,6 +592,8 @@ def _provider_error(
     message: str,
     *,
     latency_ms: int | None = None,
+    request_id: str | None = None,
+    warnings: list[str] | None = None,
 ) -> ProviderError:
     return ProviderError(
         code,
@@ -495,7 +602,126 @@ def _provider_error(
             provider_name="openai_compatible",
             provider_type=ProviderType.LLM.value,
             provider_version="openai-compatible-v1",
+            request_id=request_id,
             generated_at=utc_now_iso(),
             latency_ms=latency_ms,
+            warnings=warnings or [],
         ),
     )
+
+
+def _http_error_diagnostics(exc: HTTPError, *, base_url: str) -> dict[str, Any]:
+    request_id = _safe_token(exc.headers.get("x-request-id") if exc.headers else None)
+    warnings = [
+        *_endpoint_warnings(base_url),
+        "provider_reached=true",
+        f"provider_http_status={exc.code}",
+        "failure_category=http_error",
+    ]
+    error_payload = _provider_error_payload(exc)
+    error_info = error_payload.get("error") if isinstance(error_payload, dict) else None
+    if isinstance(error_info, dict):
+        error_type = _safe_token(error_info.get("type"))
+        error_code = _safe_token(error_info.get("code"))
+        if error_type:
+            warnings.append(f"provider_error_type={error_type}")
+        if error_code:
+            warnings.append(f"provider_error_code={error_code}")
+    if request_id:
+        warnings.append("provider_request_id_present=true")
+    return {"request_id": request_id, "warnings": warnings}
+
+
+def _endpoint_warnings(base_url: str) -> list[str]:
+    try:
+        parsed = urlparse(base_url)
+    except Exception:
+        return [
+            "endpoint_kind=chat_completions",
+            "endpoint_host=redacted",
+            "endpoint_path=redacted",
+        ]
+    host = _safe_token(parsed.hostname) or "redacted"
+    base_path = parsed.path.rstrip("/")
+    endpoint_path = f"{base_path}/chat/completions" if base_path else "/chat/completions"
+    return [
+        "endpoint_kind=chat_completions",
+        f"endpoint_host={host}",
+        f"endpoint_path={_safe_path(endpoint_path)}",
+    ]
+
+
+def _network_environment_warnings() -> list[str]:
+    return [
+        f"proxy_http_present={_env_present('HTTP_PROXY') or _env_present('http_proxy')}",
+        f"proxy_https_present={_env_present('HTTPS_PROXY') or _env_present('https_proxy')}",
+        f"proxy_no_proxy_present={_env_present('NO_PROXY') or _env_present('no_proxy')}",
+        f"ssl_cert_file_present={_env_present('SSL_CERT_FILE')}",
+        f"ssl_cert_dir_present={_env_present('SSL_CERT_DIR')}",
+        f"requests_ca_bundle_present={_env_present('REQUESTS_CA_BUNDLE')}",
+    ]
+
+
+def _env_present(name: str) -> bool:
+    return bool(os.getenv(name))
+
+
+def _url_error_reason_type(reason: Any) -> str:
+    reason_type = reason.__class__.__name__
+    return _safe_token(reason_type) or "unknown"
+
+
+def _url_error_reason_category(reason: Any) -> str:
+    if isinstance(reason, TimeoutError):
+        return "timeout"
+    if isinstance(reason, socket.gaierror):
+        return "dns"
+    if isinstance(reason, ssl.SSLError):
+        return "tls"
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection_refused"
+    reason_text = str(reason).lower()
+    if "certificate" in reason_text or "tls" in reason_text or "ssl" in reason_text:
+        return "tls"
+    if "name or service not known" in reason_text or "getaddrinfo" in reason_text:
+        return "dns"
+    if "proxy" in reason_text:
+        return "proxy"
+    if "timed out" in reason_text or "timeout" in reason_text:
+        return "timeout"
+    if "refused" in reason_text:
+        return "connection_refused"
+    return "unknown"
+
+
+def _safe_number(value: float) -> str:
+    return str(round(float(value), 3))
+
+
+def _provider_error_payload(exc: HTTPError) -> dict[str, Any]:
+    try:
+        body = exc.read(8192).decode("utf-8", errors="replace")
+    except Exception:
+        return {}
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _safe_token(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    token = value.strip()
+    if not token:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", token):
+        return "redacted"
+    return token
+
+
+def _safe_path(value: str) -> str:
+    if not re.fullmatch(r"/[A-Za-z0-9_./:-]{1,120}", value):
+        return "redacted"
+    return value

@@ -438,6 +438,7 @@ def get_ai_pipeline() -> MockAIServicePipeline:
                 model_name=settings.llm_model_name,
                 timeout_seconds=settings.llm_timeout_seconds,
                 max_tokens=settings.llm_max_tokens,
+                output_token_parameter=settings.llm_output_token_parameter,
                 max_retries=settings.llm_max_retries,
                 monthly_budget_usd=settings.llm_monthly_budget_usd,
                 allowed_environments=settings.llm_allowed_environments,
@@ -464,6 +465,17 @@ def validate_llm_startup(settings=None) -> None:
             "Real LLM is enabled but only the OpenAI-compatible adapter boundary is "
             "implemented. Set LLM_PROVIDER=openai_compatible or disable ENABLE_REAL_LLM."
         )
+    if resolved.is_staged_internal and not resolved.enable_staged_internal_llm_testing:
+        raise RuntimeError(
+            "APP_ENV=internal live LLM usage requires "
+            "ENABLE_STAGED_INTERNAL_LLM_TESTING=true and remains no-go until "
+            "staged-readiness blockers are satisfied."
+        )
+    if resolved.is_staged_internal and not resolved.enable_internal_access_gate:
+        raise RuntimeError(
+            "APP_ENV=internal live LLM usage requires ENABLE_INTERNAL_ACCESS_GATE=true. "
+            "This minimal gate does not replace production-grade auth or allowlisting."
+        )
     require_external_call_allowed(
         provider_name="openai_compatible",
         provider_type=ProviderType.LLM,
@@ -477,8 +489,7 @@ def validate_llm_startup(settings=None) -> None:
         settings=resolved,
     )
     missing = []
-    integration_test_mode = resolved.app_env == "test" and resolved.enable_integration_tests
-    if not integration_test_mode and resolved.app_env not in resolved.llm_allowed_environments:
+    if resolved.app_env not in resolved.llm_allowed_environments:
         missing.append("APP_ENV is not listed in LLM_ALLOWED_ENVIRONMENTS")
     if not resolved.llm_api_key:
         missing.append("LLM_API_KEY")
@@ -488,6 +499,8 @@ def validate_llm_startup(settings=None) -> None:
         missing.append("LLM_TIMEOUT_SECONDS must be positive")
     if resolved.llm_max_tokens <= 0:
         missing.append("LLM_MAX_TOKENS must be positive")
+    if resolved.llm_output_token_parameter not in {"max_tokens", "max_completion_tokens"}:
+        missing.append("LLM_OUTPUT_TOKEN_PARAMETER must be max_tokens or max_completion_tokens")
     if resolved.llm_max_retries < 0:
         missing.append("LLM_MAX_RETRIES cannot be negative")
     if missing:

@@ -154,6 +154,10 @@ def validate_seed_data(payload: SeedDataPayload) -> SeedValidationReport:
             errors.append(f"POI '{poi.id}' is missing required text fields.")
         if not _has_coordinates(poi.latitude, poi.longitude):
             errors.append(f"POI '{poi.id}' is missing map coordinates.")
+        if not poi.verificationNotes and not poi.provenanceMetadata:
+            errors.append(
+                f"POI '{poi.id}' is missing grounding provenance or candidate source notes."
+            )
 
     for itinerary in payload.itineraries:
         if itinerary.destinationId not in destination_ids:

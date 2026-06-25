@@ -25,6 +25,8 @@ class Settings(BaseModel):
     enable_affiliate_links: bool = False
     allow_external_calls: bool = False
     enable_integration_tests: bool = False
+    enable_staged_internal_llm_testing: bool = False
+    enable_internal_access_gate: bool = False
     external_call_allowed_environments: list[str] = ["production"]
     enable_auth: bool = False
     auth_provider: str = "dev"
@@ -49,11 +51,17 @@ class Settings(BaseModel):
     llm_model_name: str = "gpt-4.1-mini"
     llm_timeout_seconds: float = 20.0
     llm_max_tokens: int = 1200
+    llm_output_token_parameter: str = "max_tokens"
     llm_max_input_chars: int = 12000
     llm_max_output_tokens: int = 1200
     llm_max_retries: int = 0
     llm_monthly_budget_usd: float | None = None
     llm_allowed_environments: list[str] = ["development", "production"]
+    llm_max_live_calls_per_request: int = 4
+    llm_daily_live_request_ceiling: int = 4
+    llm_daily_estimated_spend_ceiling_usd: float = 0.0
+    llm_latency_alert_threshold_ms: int = 5000
+    llm_error_rate_alert_threshold_percent: float = 10.0
     poi_verification_provider: str = "mock"
     poi_verification_api_key: str | None = None
     poi_provider_base_url: str = "https://places.googleapis.com"
@@ -97,10 +105,15 @@ class Settings(BaseModel):
     poi_verification_max_batch_size: int = 25
     ticketing_lookup_max_requests_per_itinerary: int = 10
     provider_daily_cost_ceiling_usd: float = 0.0
+    itinerary_generation_max_days: int = 7
 
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def is_staged_internal(self) -> bool:
+        return self.app_env == "internal"
 
     @property
     def is_development_like(self) -> bool:
@@ -108,7 +121,7 @@ class Settings(BaseModel):
 
     @property
     def is_deployed_environment(self) -> bool:
-        return self.app_env in {"beta", "staging", "production"}
+        return self.app_env in {"internal", "beta", "staging", "production"}
 
     @property
     def is_standard_test_mode(self) -> bool:
@@ -144,6 +157,11 @@ class Settings(BaseModel):
                 )
             if self.auth_provider == "dev":
                 notes.append("AUTH_PROVIDER=dev is not a production authentication provider.")
+        if self.enable_auth and self.auth_provider != "dev" and not self.allow_external_calls:
+            notes.append(
+                "Managed auth provider validation is configured, but "
+                "ALLOW_EXTERNAL_CALLS=false blocks JWKS/provider metadata requests."
+            )
         if self.is_production and self.auth_allow_dev_user_fallback:
             notes.append("Development user fallback is ignored in production.")
         if any(
@@ -167,6 +185,19 @@ class Settings(BaseModel):
                 "ENABLE_INTEGRATION_TESTS=true."
             )
         if self.enable_real_llm:
+            if self.is_staged_internal and not self.enable_staged_internal_llm_testing:
+                notes.append(
+                    "APP_ENV=internal live LLM usage requires "
+                    "ENABLE_STAGED_INTERNAL_LLM_TESTING=true and remains no-go until "
+                    "staged-readiness blockers are satisfied."
+                )
+            if self.is_staged_internal and not self.enable_internal_access_gate:
+                notes.append(
+                    "APP_ENV=internal live LLM usage requires "
+                    "ENABLE_INTERNAL_ACCESS_GATE=true. This is a minimal fail-closed "
+                    "placeholder; production-grade auth or network allowlisting remains "
+                    "a staged-readiness blocker."
+                )
             if self.ai_provider != "openai_compatible":
                 notes.append(
                     "ENABLE_REAL_LLM=true currently requires "
@@ -174,6 +205,11 @@ class Settings(BaseModel):
                 )
             if self.app_env == "test":
                 notes.append("ENABLE_REAL_LLM must not be enabled during standard test runs.")
+            if self.app_env not in self.external_call_allowed_environments:
+                notes.append(
+                    f"APP_ENV={self.app_env} is not allowed by "
+                    "EXTERNAL_CALL_ALLOWED_ENVIRONMENTS."
+                )
             if self.app_env not in self.llm_allowed_environments:
                 notes.append(
                     f"APP_ENV={self.app_env} is not allowed by LLM_ALLOWED_ENVIRONMENTS."
@@ -186,12 +222,26 @@ class Settings(BaseModel):
                 notes.append("LLM_TIMEOUT_SECONDS must be positive.")
             if self.llm_max_tokens <= 0:
                 notes.append("LLM_MAX_TOKENS must be positive.")
+            if self.llm_output_token_parameter not in {"max_tokens", "max_completion_tokens"}:
+                notes.append(
+                    "LLM_OUTPUT_TOKEN_PARAMETER must be max_tokens or max_completion_tokens."
+                )
             if self.llm_max_input_chars <= 0:
                 notes.append("LLM_MAX_INPUT_CHARS must be positive.")
             if self.llm_max_output_tokens <= 0:
                 notes.append("LLM_MAX_OUTPUT_TOKENS must be positive.")
             if self.llm_max_retries < 0:
                 notes.append("LLM_MAX_RETRIES cannot be negative.")
+            if self.llm_max_live_calls_per_request <= 0:
+                notes.append("LLM_MAX_LIVE_CALLS_PER_REQUEST must be positive.")
+            if self.llm_daily_live_request_ceiling <= 0:
+                notes.append("LLM_DAILY_LIVE_REQUEST_CEILING must be positive for live LLM use.")
+            if self.llm_latency_alert_threshold_ms <= 0:
+                notes.append("LLM_LATENCY_ALERT_THRESHOLD_MS must be positive.")
+            if not 0 <= self.llm_error_rate_alert_threshold_percent <= 100:
+                notes.append("LLM_ERROR_RATE_ALERT_THRESHOLD_PERCENT must be between 0 and 100.")
+        if self.itinerary_generation_max_days <= 0:
+            notes.append("ITINERARY_GENERATION_MAX_DAYS must be positive.")
         if self.enable_real_vector_db and self.vector_db_provider == "qdrant":
             if not self.qdrant_url:
                 notes.append("QDRANT_URL is required when ENABLE_REAL_VECTOR_DB=true.")
@@ -301,6 +351,11 @@ def get_settings() -> Settings:
         enable_affiliate_links=_env_bool("ENABLE_AFFILIATE_LINKS", False),
         allow_external_calls=_env_bool("ALLOW_EXTERNAL_CALLS", False),
         enable_integration_tests=_env_bool("ENABLE_INTEGRATION_TESTS", False),
+        enable_staged_internal_llm_testing=_env_bool(
+            "ENABLE_STAGED_INTERNAL_LLM_TESTING",
+            False,
+        ),
+        enable_internal_access_gate=_env_bool("ENABLE_INTERNAL_ACCESS_GATE", False),
         external_call_allowed_environments=_parse_csv(
             os.getenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS"),
             ["production"],
@@ -334,6 +389,7 @@ def get_settings() -> Settings:
         llm_model_name=os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini"),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1200")),
+        llm_output_token_parameter=os.getenv("LLM_OUTPUT_TOKEN_PARAMETER", "max_tokens"),
         llm_max_input_chars=int(os.getenv("LLM_MAX_INPUT_CHARS", "12000")),
         llm_max_output_tokens=int(
             os.getenv("LLM_MAX_OUTPUT_TOKENS", os.getenv("LLM_MAX_TOKENS", "1200"))
@@ -343,6 +399,18 @@ def get_settings() -> Settings:
         llm_allowed_environments=_parse_csv(
             os.getenv("LLM_ALLOWED_ENVIRONMENTS"),
             ["development", "production"],
+        ),
+        llm_max_live_calls_per_request=int(os.getenv("LLM_MAX_LIVE_CALLS_PER_REQUEST", "4")),
+        llm_daily_live_request_ceiling=int(os.getenv("LLM_DAILY_LIVE_REQUEST_CEILING", "4")),
+        llm_daily_estimated_spend_ceiling_usd=float(
+            os.getenv(
+                "LLM_DAILY_ESTIMATED_SPEND_CEILING_USD",
+                os.getenv("PROVIDER_DAILY_COST_CEILING_USD", "0"),
+            )
+        ),
+        llm_latency_alert_threshold_ms=int(os.getenv("LLM_LATENCY_ALERT_THRESHOLD_MS", "5000")),
+        llm_error_rate_alert_threshold_percent=float(
+            os.getenv("LLM_ERROR_RATE_ALERT_THRESHOLD_PERCENT", "10")
         ),
         poi_verification_provider=poi_provider,
         poi_verification_api_key=(
@@ -412,6 +480,7 @@ def get_settings() -> Settings:
         provider_daily_cost_ceiling_usd=float(
             os.getenv("PROVIDER_DAILY_COST_CEILING_USD", "0")
         ),
+        itinerary_generation_max_days=int(os.getenv("ITINERARY_GENERATION_MAX_DAYS", "7")),
     )
 
 
@@ -423,6 +492,8 @@ def database_path_from_url(database_url: str) -> Path | None:
 
 def _normalized_app_env(value: str) -> str:
     normalized = value.strip().lower()
+    if normalized in {"internal", "staged-internal", "staged_internal"}:
+        return "internal"
     if normalized in {"development", "test", "beta", "staging", "production"}:
         return normalized
     return "development"

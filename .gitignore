@@ -33,6 +33,7 @@ backend/.pytest_tmp*/
 venv/
 ENV/
 env/
+.env.development.local/
 
 # Local databases
 *.db
@@ -61,4 +62,11 @@ desktop.ini
 .vite/
 
 # Docs
-docs/*
+!docs/
+!docs/live-llm-smoke-test-runbook.md
+!docs/internal-staged-testing-readiness-report.md
+!docs/live-llm-operational-controls.md
+!docs/live-llm-smoke-test-evidence-template.md
+!docs/live-llm-rollback-drill.md
+!docs/generated-itinerary-quality-review-template.md
+!docs/internal-live-llm-test-plan.md
