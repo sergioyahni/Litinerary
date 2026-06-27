@@ -1,0 +1,8 @@
+[run]
+data_file = tests/.artifacts/coverage/.coverage
+
+[html]
+directory = tests/.artifacts/coverage/htmlcov
+
+[xml]
+output = tests/.artifacts/coverage/coverage.xml

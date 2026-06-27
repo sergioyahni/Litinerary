@@ -12,6 +12,8 @@ $backend = Join-Path $root "backend"
 $frontend = Join-Path $root "frontend"
 $python = Join-Path $root "venv\Scripts\python.exe"
 $runId = "$PID"
+$artifactTmp = Join-Path $root "tests\.artifacts\tmp"
+New-Item -ItemType Directory -Force $artifactTmp | Out-Null
 
 $providerEnvNames = @(
   "APP_ENV",
@@ -145,7 +147,7 @@ function Set-OfflineProfileEnvironment {
   $env:AUTH_PROVIDER = "dev"
   $env:AUTH_ALLOW_DEV_USER_FALLBACK = if ($Profile -in @("development", "test")) { "true" } else { "false" }
   $env:CORS_ALLOWED_ORIGINS = "http://127.0.0.1:5173"
-  $env:LITINERARY_DATABASE_URL = "sqlite:///./deployment-readiness-$Profile-$PID.db"
+  $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/deployment-readiness-$Profile-$PID.db"
   $env:LITINERARY_AI_PROVIDER = "fake"
   $env:LLM_PROVIDER = "fake"
   $env:LITINERARY_VECTOR_PROVIDER = "fake"
@@ -318,7 +320,7 @@ for forbidden in ("Authorization", "rawProviderPayload", "raw_provider_payload")
 print(json.dumps(payload, sort_keys=True))
 '@
   Push-Location $backend
-  $profileCheckPath = Join-Path $backend ".pytest_tmp_deployment_readiness_profile_$PID.py"
+  $profileCheckPath = Join-Path $artifactTmp "deployment-readiness-profile-$PID.py"
   try {
     Set-Content -LiteralPath $profileCheckPath -Value $code -Encoding UTF8
     Invoke-NativeCommand { & $python $profileCheckPath } "Offline profile validation: $Profile"
@@ -352,18 +354,18 @@ function Set-FrontendCommandEnvironment {
 function Test-AlembicAndSeedReadiness {
   Write-Host "== Alembic migration and seed readiness =="
   $dbName = "deployment-readiness-migration-$PID.db"
-  $dbPath = Join-Path $backend $dbName
+  $dbPath = Join-Path $artifactTmp $dbName
   if (Test-Path -LiteralPath $dbPath) {
     Remove-Item -LiteralPath $dbPath -Force
   }
   Set-OfflineProfileEnvironment "test"
-  $env:LITINERARY_DATABASE_URL = "sqlite:///./$dbName"
+  $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/$dbName"
   Push-Location $backend
   try {
     Invoke-NativeCommand { & $python -m alembic heads } "Alembic heads"
     Invoke-NativeCommand { & $python -m alembic upgrade head } "Alembic upgrade on temporary DB"
     Invoke-NativeCommand { & $python -m scripts.seed_database } "Seed temporary DB"
-    Invoke-NativeCommand { & $python -m pytest tests\test_database_seed.py tests\test_seed_manager.py --basetemp=".pytest_tmp_deployment_readiness_seed_$runId" } "Seed validation tests"
+    Invoke-NativeCommand { & $python -m pytest tests\test_database_seed.py tests\test_seed_manager.py --basetemp="..\tests\.artifacts\tmp\pytest-deployment-readiness-seed-$runId" } "Seed validation tests"
   }
   finally {
     Pop-Location
@@ -377,8 +379,8 @@ function Test-HealthReadinessServer {
   Write-Host "== Temporary backend health/readiness check =="
   Set-OfflineProfileEnvironment "staging"
   $serverDbName = "deployment-readiness-server-$PID.db"
-  $serverDbPath = Join-Path $backend $serverDbName
-  $env:LITINERARY_DATABASE_URL = "sqlite:///./$serverDbName"
+  $serverDbPath = Join-Path $artifactTmp $serverDbName
+  $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/$serverDbName"
   Push-Location $backend
   $server = $null
   try {
@@ -461,14 +463,14 @@ Set-OfflineProfileEnvironment "test"
 Push-Location $backend
 try {
   if ($Full) {
-    Invoke-NativeCommand { & $python -m pytest --basetemp=".pytest_tmp_deployment_readiness_full_$runId" } "Backend full pytest"
+    Invoke-NativeCommand { & $python -m pytest --basetemp="..\tests\.artifacts\tmp\pytest-deployment-readiness-full-$runId" } "Backend full pytest"
   } else {
     Invoke-NativeCommand {
       & $python -m pytest `
         tests\test_offline_integration_readiness.py `
         tests\test_provider_fail_closed_integration.py `
         tests\test_model_metadata_migrations.py `
-        --basetemp=".pytest_tmp_deployment_readiness_$runId"
+        --basetemp="..\tests\.artifacts\tmp\pytest-deployment-readiness-$runId"
     } "Backend focused deployment tests"
   }
 }

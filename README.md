@@ -293,6 +293,15 @@ cd backend
 ..\venv\Scripts\python.exe -m pytest
 ```
 
+Pytest artifacts are centralized under `tests/.artifacts/`:
+
+- `tests/.artifacts/logs/` stores pytest runtime logs and captured local smoke/backend logs.
+- `tests/.artifacts/reports/` stores JUnit XML and other machine-readable test reports.
+- `tests/.artifacts/coverage/` stores coverage.py data, XML, and HTML output.
+- `tests/.artifacts/tmp/` stores pytest basetemp directories and temporary test-run files.
+
+The artifact tree is ignored by Git except for `.gitkeep` placeholders. To clean local artifacts, remove the contents of `tests/.artifacts/logs/`, `tests/.artifacts/reports/`, `tests/.artifacts/coverage/`, and `tests/.artifacts/tmp/` while leaving the `.gitkeep` files in place.
+
 Run only the backend smoke path:
 
 ```bash

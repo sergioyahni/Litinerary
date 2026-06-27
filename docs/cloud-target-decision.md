@@ -7,8 +7,9 @@ Litinerary cloud offline deployment rehearsal. The first target must support a
 mock-only deployment, health/readiness evidence, logs/redaction review, rollback
 evidence, and non-production database migration/seed rehearsal.
 
-No platform is approved by this document. The final target choice requires user
-approval before any cloud deployment or cloud resource changes.
+Render has been selected as the first target for target-specific cloud offline
+rehearsal assets. This document still does not approve any cloud deployment or
+cloud resource changes.
 
 ## Decision Criteria
 
@@ -52,7 +53,7 @@ surface while producing the evidence needed for the mock-only cloud rehearsal.
 
 ## Required User Approval
 
-Before execution, the user must approve:
+Before execution on Render, the user must approve:
 
 - selected cloud provider/platform
 - cloud project/account
@@ -69,16 +70,21 @@ Do not deploy or create cloud resources until that approval exists.
 
 - Recommended first target type: PaaS/app platform or static frontend plus
   managed backend/API, with managed non-production database.
-- Requested target placeholder: `{{CLOUD_TARGET}}`.
-- Target-specific placeholder assets:
+- Selected target: Render.
+- Target-specific Render assets:
+  - `docs/cloud-offline-deployment-render.md`
+  - `docs/cloud-offline-env-render.template.md`
+  - `docs/cloud-offline-checklist-render.md`
+  - `docs/cloud-offline-rehearsal-record-render.md`
+- Placeholder assets retained for future target comparison:
   - `docs/cloud-offline-deployment-cloud-target-placeholder.md`
   - `docs/cloud-offline-env-cloud-target-placeholder.template.md`
   - `docs/cloud-offline-checklist-cloud-target-placeholder.md`
   - `docs/cloud-offline-rehearsal-record-cloud-target-placeholder.md`
-- Final target selected: pending user approval and replacement of
-  `{{CLOUD_TARGET}}` with a concrete platform.
 - Cloud offline rehearsal status: not executed.
 - Cloud deployment executed: no.
+- Cloud resources created: no.
+- Live providers enabled: no.
 - Local live deployment: blocked.
 - Staged internal testing: `No-go`.
 - Public/beta live generation: `No-go`.

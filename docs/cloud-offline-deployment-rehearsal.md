@@ -49,22 +49,28 @@ Replace these placeholders during an approved cloud-offline rehearsal:
 
 Do not store real cloud credentials or secrets in tracked files.
 
-Use `docs/cloud-target-decision.md` to choose the first target. If no platform
-has been selected, the conservative recommendation is a simple non-production
-PaaS/app platform or static frontend plus managed backend/API target with a
-managed non-production database, built-in logs, and revision rollback. Final
-selection still requires user approval.
+Use `docs/cloud-target-decision.md` for target-selection context. Render has
+been selected as the first concrete target for target-specific cloud offline
+rehearsal assets. This selection does not approve deployment or cloud resource
+creation.
 
-Current target-specific placeholder assets for the unresolved
-`{{CLOUD_TARGET}}` value:
+Target-specific Render assets:
+
+- `docs/cloud-offline-deployment-render.md`
+- `docs/cloud-offline-env-render.template.md`
+- `docs/cloud-offline-checklist-render.md`
+- `docs/cloud-offline-rehearsal-record-render.md`
+
+Placeholder assets remain available for future target comparison:
 
 - `docs/cloud-offline-deployment-cloud-target-placeholder.md`
 - `docs/cloud-offline-env-cloud-target-placeholder.template.md`
 - `docs/cloud-offline-checklist-cloud-target-placeholder.md`
 - `docs/cloud-offline-rehearsal-record-cloud-target-placeholder.md`
 
-Do not execute the cloud offline rehearsal until `{{CLOUD_TARGET}}` is replaced
-with a concrete non-production cloud target approved by the user.
+Do not execute the cloud offline rehearsal on Render until the user separately
+approves the Render account/project, non-production environment, database,
+access restrictions, rollback method, and operator.
 
 ## Prerequisites
 
@@ -72,6 +78,7 @@ with a concrete non-production cloud target approved by the user.
 - Local offline deployment rehearsal has passed.
 - A non-production cloud target is selected using
   `docs/cloud-target-decision.md`.
+- Render-specific docs have been reviewed if Render remains the selected target.
 - `docs/cloud-target-readiness-checklist.md` is completed for the selected
   target.
 - `docs/cloud-offline-env-posture-template.md` is mapped into the selected
@@ -334,3 +341,14 @@ Passing this rehearsal does not approve:
 - production deployment
 - live vector DB, POI verification, routing, ticketing, affiliate, TTS, or
   managed auth providers
+
+## Current Status
+
+- Selected target: Render.
+- Target-specific docs created.
+- Cloud offline rehearsal executed: no.
+- Cloud deployment executed: no.
+- Cloud resources created: no.
+- Live providers enabled: no.
+- Staged internal testing: `No-go`.
+- Public/beta live generation: `No-go`.

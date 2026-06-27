@@ -123,7 +123,7 @@ From the repository root:
 
 ```powershell
 cd backend
-..\venv\Scripts\python.exe -m pytest --basetemp=.pytest_tmp_codex
+..\venv\Scripts\python.exe -m pytest
 cd ..\frontend
 npm.cmd test
 npm.cmd run typecheck

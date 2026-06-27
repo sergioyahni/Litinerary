@@ -96,7 +96,7 @@ Fixes made during verification:
 
 - The dry-run script now fails when native commands fail instead of continuing after a nonzero exit code.
 - Backend tests now run with a clean local test environment instead of inheriting beta settings that intentionally disable admin/debug routes.
-- Backend tests now use a per-process workspace pytest temp directory, such as `.pytest_tmp_beta_dry_run_<pid>`, to avoid Windows locked-directory collisions.
+- Backend tests now use a per-process workspace pytest temp directory under `tests/.artifacts/tmp/`, such as `pytest-beta-dry-run-<pid>`, to avoid Windows locked-directory collisions.
 - The beta database is explicitly migrated and seeded before backend health/readiness checks.
 - Readiness smoke now verifies external calls are disabled and all provider `realEnabled` flags are false.
 - Debug route protection is checked in addition to admin route protection.
@@ -106,7 +106,7 @@ Machine-specific notes:
 
 - This Windows machine blocks direct `.ps1` execution by policy. Use the process-scoped bypass command above, or enable script execution according to local policy.
 - In the Codex sandbox, frontend Vite/Vitest child processes can fail with `Cannot read directory "../../..": Access is denied` when launched from inside a longer PowerShell script. Running the full dry run outside the sandbox, or from a normal VS Code terminal, avoids that sandbox path restriction.
-- Stale pytest temp directories can be locked on Windows. The dry-run script now avoids this by using a unique `--basetemp` path per process.
+- Stale pytest temp directories can be locked on Windows. The dry-run script now avoids this by using a unique `tests/.artifacts/tmp/` `--basetemp` path per process.
 
 ## Manual Checklist
 
@@ -116,7 +116,7 @@ Machine-specific notes:
 - Confirm no `.env`, local DB, cache, build output, or secret file is staged.
 - Run Alembic migrations: `..\venv\Scripts\python.exe -m alembic upgrade head` from `backend`.
 - Seed only safe non-production data: `..\venv\Scripts\python.exe -m scripts.seed_database` from `backend`.
-- Run backend tests: `..\venv\Scripts\python.exe -m pytest --basetemp=.pytest_tmp_beta_dry_run` from `backend`.
+- Run backend tests: `..\venv\Scripts\python.exe -m pytest --basetemp=..\tests\.artifacts\tmp\pytest-beta-dry-run` from `backend`.
 - Run frontend tests: `npm test` from `frontend`.
 - Run smoke tests: `.\scripts\test_smoke.ps1`.
 - Build frontend: `npm run build` from `frontend`.

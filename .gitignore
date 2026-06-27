@@ -3,13 +3,24 @@
 .env.*
 !.env.example
 !.env.*.example
-!frontend/.env*.example
+!.env.template
+!.env.*.template
+!frontend/.env.example
+!frontend/.env.*.example
+!frontend/.env.template
+!frontend/.env.*.template
+!backend/.env.example
+!backend/.env.*.example
+!backend/.env.template
+!backend/.env.*.template
 
 # Node / frontend
 node_modules/
 frontend/node_modules/
 dist/
 frontend/dist/
+build/
+frontend/build/
 coverage/
 frontend/coverage/
 
@@ -23,7 +34,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+*.egg-info/
 backend/.pytest_cache/
 backend/.pytest_tmp/
 backend/.pytest_tmp*/
@@ -33,7 +47,6 @@ backend/.pytest_tmp*/
 venv/
 ENV/
 env/
-.env.development.local/
 
 # Local databases
 *.db
@@ -47,7 +60,9 @@ backend/*.sqlite3
 *.log
 logs/
 *.pid
-*.seed
+tmp/
+temp/
+*.tmp
 
 # Editor and OS artifacts
 .vscode/
@@ -60,13 +75,16 @@ desktop.ini
 .cache/
 .parcel-cache/
 .vite/
+frontend/.vite/
 
-# Docs
-!docs/
-!docs/live-llm-smoke-test-runbook.md
-!docs/internal-staged-testing-readiness-report.md
-!docs/live-llm-operational-controls.md
-!docs/live-llm-smoke-test-evidence-template.md
-!docs/live-llm-rollback-drill.md
-!docs/generated-itinerary-quality-review-template.md
-!docs/internal-live-llm-test-plan.md
+# Pytest and test-run artifacts
+tests/.artifacts/*
+!tests/.artifacts/.gitkeep
+!tests/.artifacts/logs/
+!tests/.artifacts/logs/.gitkeep
+!tests/.artifacts/reports/
+!tests/.artifacts/reports/.gitkeep
+!tests/.artifacts/coverage/
+!tests/.artifacts/coverage/.gitkeep
+!tests/.artifacts/tmp/
+!tests/.artifacts/tmp/.gitkeep

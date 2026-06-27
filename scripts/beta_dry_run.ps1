@@ -12,6 +12,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $backend = Join-Path $root "backend"
 $frontend = Join-Path $root "frontend"
 $python = Join-Path $root "venv\Scripts\python.exe"
+$artifactTmp = Join-Path $root "tests\.artifacts\tmp"
+New-Item -ItemType Directory -Force $artifactTmp | Out-Null
 
 function Invoke-NativeCommand {
   param(
@@ -70,7 +72,7 @@ function Set-BetaEnvironment {
   $env:AUTH_PROVIDER = "dev"
   $env:AUTH_ALLOW_DEV_USER_FALLBACK = "false"
   $env:CORS_ALLOWED_ORIGINS = "http://127.0.0.1:5173"
-  $env:LITINERARY_DATABASE_URL = "sqlite:///./litinerary-beta-dry-run.db"
+  $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/litinerary-beta-dry-run.db"
   $env:LITINERARY_AI_PROVIDER = "fake"
   $env:LLM_PROVIDER = "fake"
   $env:LITINERARY_VECTOR_PROVIDER = "fake"
@@ -201,7 +203,7 @@ try {
   if (-not $SkipTests) {
     Write-Host "== Backend tests =="
     Set-BackendTestEnvironment
-    $pytestTemp = ".pytest_tmp_beta_dry_run_$PID"
+    $pytestTemp = "..\tests\.artifacts\tmp\pytest-beta-dry-run-$PID"
     Invoke-NativeCommand { & $python -m pytest --basetemp=$pytestTemp } "Backend tests"
     Set-BetaEnvironment
   }

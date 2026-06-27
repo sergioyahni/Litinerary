@@ -10,6 +10,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 $preflight = Join-Path $PSScriptRoot "live_llm_smoke_preflight.ps1"
+$logDir = Join-Path $repoRoot "tests\.artifacts\logs"
+$tmpDir = Join-Path $repoRoot "tests\.artifacts\tmp"
+New-Item -ItemType Directory -Force $logDir, $tmpDir | Out-Null
 
 if (-not [string]::IsNullOrWhiteSpace($EnvFile)) {
   & $preflight -EnvFile $EnvFile -RequireLiveReady
@@ -26,9 +29,9 @@ try {
       -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", $HostAddress, "--port", "$Port") `
       -PassThru `
       -WindowStyle Hidden `
-      -RedirectStandardOutput "..\.pytest_tmp_codex_uvicorn_stdout_$Port.log" `
-      -RedirectStandardError "..\.pytest_tmp_codex_uvicorn_stderr_$Port.log"
-    Set-Content -LiteralPath "..\.pytest_tmp_codex_live_server.pid" -Value $server.Id
+      -RedirectStandardOutput (Join-Path $logDir "live-llm-uvicorn-stdout-$Port.log") `
+      -RedirectStandardError (Join-Path $logDir "live-llm-uvicorn-stderr-$Port.log")
+    Set-Content -LiteralPath (Join-Path $tmpDir "live-llm-server.pid") -Value $server.Id
     Write-Output "serverPid=$($server.Id)"
     Write-Output "serverPort=$Port"
   } else {

@@ -10,20 +10,22 @@
 ## Target Selection
 
 - [ ] `docs/cloud-target-decision.md` reviewed.
-- [ ] `{{CLOUD_TARGET}}` replaced with a concrete non-production cloud target.
-- [ ] Final target choice approved by user.
+- [ ] Selected target confirmed as Render.
+- [ ] Final Render account/project/environment approved by user before
+      execution.
 - [ ] `docs/cloud-target-readiness-checklist.md` completed for target.
 - [ ] `docs/cloud-offline-env-posture-template.md` mapped to platform config.
-- [ ] Target-specific placeholder assets updated or copied for the concrete
-      target:
-      `docs/cloud-offline-deployment-cloud-target-placeholder.md`,
-      `docs/cloud-offline-env-cloud-target-placeholder.template.md`,
-      `docs/cloud-offline-checklist-cloud-target-placeholder.md`,
-      and `docs/cloud-offline-rehearsal-record-cloud-target-placeholder.md`.
+- [ ] Render-specific assets reviewed:
+      `docs/cloud-offline-deployment-render.md`,
+      `docs/cloud-offline-env-render.template.md`,
+      `docs/cloud-offline-checklist-render.md`, and
+      `docs/cloud-offline-rehearsal-record-render.md`.
 - [ ] Target supports health/readiness evidence.
 - [ ] Target supports durable log/redaction evidence.
 - [ ] Target supports rollback/shutdown evidence.
 - [ ] Target rejected if any required evidence channel is unavailable.
+- [ ] Cloud deployment has not been executed during planning.
+- [ ] Cloud resources have not been created during planning.
 
 ## Tests And Harness Status
 
@@ -53,6 +55,7 @@
 - [ ] TTS is disabled/mock.
 - [ ] managed auth is disabled/mock unless separately approved.
 - [ ] No `LLM_API_KEY` is configured.
+- [ ] No live provider credentials are configured.
 
 ## Database And Migrations
 
