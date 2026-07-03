@@ -147,3 +147,82 @@
 - Plan: Free
 - Production? No
 - Connection type used by backend: Internal Database URL
+
+### Backend pytest gate
+
+Command:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest backend\tests --basetemp=tests\.artifacts\tmp\pytest-render-rehearsal
+```
+
+Result:
+
+- Status: Passed
+- Tests: 292
+- Failures: 0
+- Errors: 0
+- Skipped: 3
+- Duration: 31.897s
+
+Notes:
+
+The skipped tests were live-provider integration tests and remained skipped by default:
+
+- `test_live_google_places_integration_skipped_by_default`
+- `test_live_llm_integration_skipped_by_default`
+- `test_live_openrouteservice_integration_skipped_by_default`
+
+No cloud provider was contacted by this backend pytest gate.
+
+### Frontend build gate
+
+Command:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\cloud_offline_render_preflight.ps1 -RunFrontendBuild
+```
+
+Result:
+
+- Status: Passed
+- Final output: `Render cloud-offline preflight passed. No deployment was performed.`
+
+Notes:
+
+The frontend build gate was run through the Render cloud-offline preflight script with `-RunFrontendBuild`.
+
+No deployment was performed, and no cloud provider was contacted by this preflight gate.
+
+### Full local Render preflight
+
+Command:
+
+```powershell
+$env:PYTHONPATH = "C:\Users\syahn\source\litinerary\backend"
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\cloud_offline_render_preflight.ps1 -RunHarness -RunFrontendBuild
+```
+
+Result:
+
+- Status: Passed
+- Final output: `Render cloud-offline preflight passed. No deployment was performed.`
+
+Notes:
+
+The first full preflight attempt failed during offline profile validation because the temporary validation script could not import the backend `app` package:
+
+```text
+ModuleNotFoundError: No module named 'app'
+```
+
+The rerun passed after setting `PYTHONPATH` to the absolute backend path:
+
+```powershell
+$env:PYTHONPATH = "C:\Users\syahn\source\litinerary\backend"
+```
+
+The local deployment-readiness harness and frontend build completed successfully through the Render cloud-offline preflight script.
+
+No deployment was performed, and no cloud provider was contacted by this preflight gate.
