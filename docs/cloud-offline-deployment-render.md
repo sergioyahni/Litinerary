@@ -383,9 +383,28 @@ provider credentials, and does not approve local live deployment, staged
 internal live LLM testing, public/beta live generation, or any live external
 provider.
 
+## Backend service
+
+- Type: Web Service
+- Name: litinerary-render-offline-backend
+- Environment / Runtime: Python
+- Root directory: backend
+- Branch: main
+- Region: Ohio (US East)
+- Plan: Free
+- Auto Deploy: Off, if available
+- Build command: pip install -r requirements.txt
+- Start command: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+- Production? No
+- Live provider credentials configured? No
+- LLM_API_KEY configured? No
+- OpenAI-compatible provider configured? No
+- External provider credentials configured? No
+
 ## References
 
 - Render web services: https://render.com/docs/web-services
 - Render static sites: https://render.com/docs/static-sites
 - Render PostgreSQL connections: https://render.com/docs/postgresql-creating-connecting
 - Render deploy rollbacks: https://render.com/docs/deploy-rollbacks
+

@@ -140,3 +140,10 @@
 - Secrets/raw provider payloads added:
 - Staged internal testing approved:
 - Public/beta live generation approved:
+
+## Database resource:
+- Name: dpg-d8vnkrcm0tmc73d1m7ng-a
+- Region: Ohio (US East)
+- Plan: Free
+- Production? No
+- Connection type used by backend: Internal Database URL
