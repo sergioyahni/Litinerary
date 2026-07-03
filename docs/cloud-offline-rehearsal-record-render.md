@@ -226,3 +226,37 @@ $env:PYTHONPATH = "C:\Users\syahn\source\litinerary\backend"
 The local deployment-readiness harness and frontend build completed successfully through the Render cloud-offline preflight script.
 
 No deployment was performed, and no cloud provider was contacted by this preflight gate.
+
+### Render backend deploy and smoke check
+
+Service:
+
+- Name: `litinerary-render-offline-backend`
+- URL: `https://litinerary-render-offline-backend.onrender.com`
+- Branch: `main`
+- Commit: `2defe81`
+- Auto Deploy: Off
+- Environment posture: mock-only/offline, no live provider credentials
+
+Deploy result:
+
+- Status: Live
+- Build result: Successful
+
+Smoke checks:
+
+- `/health`: Passed
+  - Status: 200
+  - Body: `{"status":"ok"}`
+- `/api/readiness`: Passed
+  - Status: 200
+  - Body included:
+    - `status: ready`
+    - `appEnv: development`
+    - `checks.database.status: ok`
+
+Notes:
+
+The root path `/` returned 404 and `/readiness` returned 404. These were not treated as failures because the backend health endpoint is `/health` and the readiness endpoint is `/api/readiness`.
+
+No real provider credentials were added. No live LLM, POI, routing, vector DB, ticketing, affiliate, managed-auth, or TTS integrations were enabled.
