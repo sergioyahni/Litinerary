@@ -260,3 +260,40 @@ Notes:
 The root path `/` returned 404 and `/readiness` returned 404. These were not treated as failures because the backend health endpoint is `/health` and the readiness endpoint is `/api/readiness`.
 
 No real provider credentials were added. No live LLM, POI, routing, vector DB, ticketing, affiliate, managed-auth, or TTS integrations were enabled.
+
+### Render frontend deploy and smoke check
+
+Site:
+
+- Name: `litinerary-render-offline-frontend`
+- URL: `https://litinerary-render-offline-frontend.onrender.com`
+- Branch: `main`
+- Root Directory: `frontend`
+- Build Command: `npm ci && npm run build`
+- Publish Directory: `dist`
+- Auto Deploy: Off
+
+Deploy result:
+
+- Status: Live
+- Build result: Successful
+- Build output included:
+  - `vue-tsc --noEmit && vite build`
+  - `✓ built`
+  - `Your site is live`
+
+Smoke check:
+
+- Frontend URL loaded: Passed
+- Visible issue observed: No
+
+Notes:
+
+The frontend build reported npm audit findings:
+
+- 6 vulnerabilities
+- 3 moderate
+- 2 high
+- 1 critical
+
+These audit findings were not treated as a blocker for this mock-only/offline Render rehearsal, but they should be tracked before any beta or production exposure.
