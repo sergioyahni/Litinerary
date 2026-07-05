@@ -297,3 +297,35 @@ The frontend build reported npm audit findings:
 - 1 critical
 
 These audit findings were not treated as a blocker for this mock-only/offline Render rehearsal, but they should be tracked before any beta or production exposure.
+
+### Render frontend-backend integration smoke check
+
+Initial result:
+
+- Status: Failed
+- Action tested: Choose a Destination
+- Observed result: Destinations could not load — Failed to fetch
+- Browser console showed CORS failure:
+  - Backend request: `https://litinerary-render-offline-backend.onrender.com/api/destinations`
+  - Frontend origin: `https://litinerary-render-offline-frontend.onrender.com`
+  - Error: No `Access-Control-Allow-Origin` header was present on the preflight response.
+
+Fix applied:
+
+- Backend environment updated:
+  - `CORS_ALLOWED_ORIGINS=https://litinerary-render-offline-frontend.onrender.com`
+  - `FRONTEND_URL=https://litinerary-render-offline-frontend.onrender.com`
+- Backend redeployed manually.
+- Backend redeploy status: Succeeded.
+
+Final result:
+
+- Status: Passed
+- Action tested: Choose a Destination
+- Observed result: Results loaded as expected.
+
+Notes:
+
+The frontend was already using the correct backend API base URL after setting `VITE_API_BASE_URL` on the frontend Static Site and redeploying it. The remaining blocker was backend CORS configuration.
+
+No wildcard CORS origin was used. No secrets or live provider credentials were added.
