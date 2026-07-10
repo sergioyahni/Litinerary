@@ -398,3 +398,28 @@ Result:
 Notes:
 
 No visible secrets, database URL values, authorization headers, provider request payloads, raw provider responses, API keys, tokens, passwords, or connection strings were observed in the reviewed logs/evidence.
+
+### Render rollback/shutdown result
+
+Shutdown actions:
+
+- Frontend Static Site `litinerary-render-offline-frontend`: Suspended
+- Backend Web Service `litinerary-render-offline-backend`: Suspended
+
+Public URL verification:
+
+- Frontend suspended URL check: Passed
+- Backend suspended URL check: Passed
+- Observed response: `This service has been suspended by its owner.`
+
+Database action:
+
+- Render Postgres database was left in place for evidence continuity and potential follow-up inspection.
+- No database URL or secret value was recorded in docs or chat.
+
+Result:
+
+- Status: Passed
+- No public frontend route remains serving the app.
+- No public backend health route remains serving the API.
+- Services are no longer publicly active after the mock-only/offline rehearsal.
