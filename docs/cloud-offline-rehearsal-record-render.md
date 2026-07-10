@@ -329,3 +329,42 @@ Notes:
 The frontend was already using the correct backend API base URL after setting `VITE_API_BASE_URL` on the frontend Static Site and redeploying it. The remaining blocker was backend CORS configuration.
 
 No wildcard CORS origin was used. No secrets or live provider credentials were added.
+
+
+### Render Postgres migration, seed, and mock itinerary smoke check
+
+Initial database issue:
+
+- Backend was initially falling back to SQLite because `LITINERARY_DATABASE_URL` was not set in the backend Render environment.
+- Symptom during mock itinerary/account flow:
+  - `sqlalchemy.exc.OperationalError`
+  - `sqlite3.OperationalError: no such table: users`
+
+Database environment fix:
+
+- Backend environment updated with the Render Postgres Internal Database URL.
+- The URL scheme was changed from `postgresql://` to `postgresql+psycopg://` so SQLAlchemy uses the installed `psycopg` driver.
+- Secret value was not pasted into docs or chat.
+
+Verification:
+
+- `LITINERARY_DATABASE_URL set: True`
+- `LITINERARY_DATABASE_URL scheme: postgresql+psycopg`
+
+Postgres commands:
+
+- `python -m alembic upgrade head`: Passed
+- `python -m scripts.seed_database`: Passed
+- `python -m scripts.validate_seed_data`: Passed
+
+Final mock itinerary smoke check:
+
+- Status: Passed
+- Action tested: London / Sherlock Holmes / 1 day / walking
+- Observed result: Output as expected
+- Save/account error: No
+- Provider/live-call concern visible: No
+
+Notes:
+
+The earlier provider log for narration showed `provider_name: local_usage_policy` and `provider_type: tts`, which is consistent with the mock/offline rehearsal posture. No live provider call was observed.
