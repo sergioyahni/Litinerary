@@ -368,3 +368,33 @@ Final mock itinerary smoke check:
 Notes:
 
 The earlier provider log for narration showed `provider_name: local_usage_policy` and `provider_type: tts`, which is consistent with the mock/offline rehearsal posture. No live provider call was observed.
+
+### Render log hygiene review
+
+Scope reviewed:
+
+- Backend deploy logs
+- Backend runtime logs
+- Frontend deploy logs
+- Health/readiness logs
+- Frontend-backend smoke-check logs
+- Mock itinerary-generation logs
+- Migration/seed/validation command output
+
+Checked for:
+
+- Database URL values
+- Authorization headers
+- API keys or tokens
+- OpenAI, Google Places, OpenRouteService, vector DB, ticketing, affiliate, managed-auth, or TTS provider payloads
+- Raw provider responses
+- Passwords or connection strings
+
+Result:
+
+- Status: Passed
+- Finding: None
+
+Notes:
+
+No visible secrets, database URL values, authorization headers, provider request payloads, raw provider responses, API keys, tokens, passwords, or connection strings were observed in the reviewed logs/evidence.
