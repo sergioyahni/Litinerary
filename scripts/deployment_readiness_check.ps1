@@ -323,9 +323,12 @@ print(json.dumps(payload, sort_keys=True))
   $profileCheckPath = Join-Path $artifactTmp "deployment-readiness-profile-$PID.py"
   try {
     Set-Content -LiteralPath $profileCheckPath -Value $code -Encoding UTF8
+    $previousPythonPath = $env:PYTHONPATH
+    $env:PYTHONPATH = $backend
     Invoke-NativeCommand { & $python $profileCheckPath } "Offline profile validation: $Profile"
   }
   finally {
+    $env:PYTHONPATH = $previousPythonPath
     if (Test-Path -LiteralPath $profileCheckPath) {
       Remove-Item -LiteralPath $profileCheckPath -Force
     }
