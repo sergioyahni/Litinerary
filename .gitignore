@@ -80,11 +80,3 @@ frontend/.vite/
 # Pytest and test-run artifacts
 tests/.artifacts/*
 !tests/.artifacts/.gitkeep
-!tests/.artifacts/logs/
-!tests/.artifacts/logs/.gitkeep
-!tests/.artifacts/reports/
-!tests/.artifacts/reports/.gitkeep
-!tests/.artifacts/coverage/
-!tests/.artifacts/coverage/.gitkeep
-!tests/.artifacts/tmp/
-!tests/.artifacts/tmp/.gitkeep

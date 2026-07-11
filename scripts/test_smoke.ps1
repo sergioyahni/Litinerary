@@ -2,10 +2,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
+$python = Join-Path $root "venv\Scripts\python.exe"
 
-Push-Location (Join-Path $root "backend")
+Push-Location $root
 try {
-  ..\venv\Scripts\python.exe -m pytest tests\test_smoke_happy_path.py
+  & $python -m pytest backend\tests\test_smoke_happy_path.py
 }
 finally {
   Pop-Location
