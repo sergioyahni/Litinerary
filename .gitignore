@@ -78,5 +78,7 @@ desktop.ini
 frontend/.vite/
 
 # Pytest and test-run artifacts
-tests/.artifacts/*
+tests/.artifacts/**
+!tests/.artifacts/
 !tests/.artifacts/.gitkeep
+backend/tests/.artifacts/**

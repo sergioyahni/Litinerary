@@ -72,6 +72,7 @@ def test_provider_error_normalizes_error_payload() -> None:
             provider_name="mock",
             provider_type=ProviderType.LLM,
         ),
+        retry_after_seconds=60,
     )
 
     payload = error.to_dict()
@@ -79,6 +80,7 @@ def test_provider_error_normalizes_error_payload() -> None:
     assert payload["code"] == "rate_limited"
     assert payload["message"] == "Provider rate limit exceeded."
     assert payload["metadata"]["provider_name"] == "mock"
+    assert payload["retryAfterSeconds"] == 60
 
 
 def test_mock_ai_pipeline_results_include_provider_metadata() -> None:

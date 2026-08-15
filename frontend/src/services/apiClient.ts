@@ -16,14 +16,18 @@ export class ApiError extends Error {
   detail: string;
   isUnauthorized: boolean;
   isForbidden: boolean;
+  isRateLimited: boolean;
+  retryAfterSeconds: number | null;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, retryAfterSeconds: number | null = null) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.isUnauthorized = status === 401;
     this.isForbidden = status === 403;
+    this.isRateLimited = status === 429;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -62,8 +66,24 @@ export async function requestJson<T>(
       detail = response.statusText || detail;
     }
 
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, retryAfterSeconds(response.headers));
   }
 
   return response.json() as Promise<T>;
+}
+
+function retryAfterSeconds(headers: Headers | undefined): number | null {
+  const value = headers?.get("Retry-After");
+  if (!value) {
+    return null;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds;
+  }
+  const retryAt = Date.parse(value);
+  if (Number.isNaN(retryAt)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
 }

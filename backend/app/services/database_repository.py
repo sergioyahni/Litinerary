@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.auth import CurrentUser
 from app.data.mock_data import BOOKS, DESTINATIONS, ITINERARIES
 from app.models import (
     BookModel,
@@ -10,6 +11,7 @@ from app.models import (
     ItineraryModel,
     ItineraryStopModel,
     POIModel,
+    UserModel,
 )
 from app.schemas.domain import Book, Destination, Itinerary, ItineraryDay, ItineraryStop, POI
 
@@ -137,7 +139,58 @@ def get_itinerary(db: Session, itinerary_id: str) -> Itinerary | None:
     return itinerary_from_model(row) if row else None
 
 
+def get_accessible_itinerary(
+    db: Session,
+    itinerary_id: str,
+    current_user: CurrentUser | None = None,
+) -> Itinerary | None:
+    row = get_accessible_itinerary_model(db, itinerary_id, current_user=current_user)
+    return itinerary_from_model(row) if row else None
+
+
+def get_accessible_itinerary_model(
+    db: Session,
+    itinerary_id: str,
+    current_user: CurrentUser | None = None,
+) -> ItineraryModel | None:
+    row = db.scalars(
+        select(ItineraryModel)
+        .where(ItineraryModel.id == itinerary_id)
+        .options(_itinerary_load_options())
+    ).first()
+    if row is None or not itinerary_row_is_accessible(row, current_user=current_user):
+        return None
+    return row
+
+
+def itinerary_row_is_accessible(
+    row: ItineraryModel,
+    current_user: CurrentUser | None = None,
+) -> bool:
+    if itinerary_row_is_public_repository(row):
+        return True
+    if current_user is None:
+        return False
+    return current_user.is_admin or row.owner_user_id == current_user.id
+
+
+def itinerary_is_accessible(
+    itinerary: Itinerary,
+    current_user: CurrentUser | None = None,
+) -> bool:
+    if itinerary.isPublic and itinerary.visibility == "public":
+        return True
+    if current_user is None:
+        return False
+    return current_user.is_admin or itinerary.ownerUserId == current_user.id
+
+
+def itinerary_row_is_public_repository(row: ItineraryModel) -> bool:
+    return row.is_public and row.visibility == "public"
+
+
 def save_itinerary(db: Session, itinerary: Itinerary) -> None:
+    validate_itinerary_access_invariants(db, itinerary)
     existing = db.get(ItineraryModel, itinerary.id)
     if existing is not None:
         db.delete(existing)
@@ -146,6 +199,19 @@ def save_itinerary(db: Session, itinerary: Itinerary) -> None:
     model = itinerary_to_model(db, itinerary)
     db.add(model)
     db.commit()
+
+
+def validate_itinerary_access_invariants(db: Session, itinerary: Itinerary) -> None:
+    if itinerary.visibility == "public" and not itinerary.isPublic:
+        raise ValueError("Public itinerary visibility requires isPublic=true.")
+    if itinerary.visibility != "public" and itinerary.isPublic:
+        raise ValueError("Private or unlisted itinerary visibility requires isPublic=false.")
+    if itinerary.subscriberOnly and (
+        itinerary.visibility != "private" or itinerary.isPublic or not itinerary.ownerUserId
+    ):
+        raise ValueError("Subscriber-only itineraries must be private and owner-bound.")
+    if itinerary.ownerUserId and db.get(UserModel, itinerary.ownerUserId) is None:
+        raise ValueError(f"Unknown itinerary owner: {itinerary.ownerUserId}")
 
 
 def destination_from_model(row: DestinationModel) -> Destination:

@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from app.core.auth import CurrentUser
+from app.core.config import get_settings
 from app.core.errors import mock_judge_rejected, not_found, not_found_detail, validation_error
 from app.data.mock_data import BOOKS, DESTINATIONS, ITINERARIES, POIS
 from app.schemas.domain import (
@@ -20,7 +22,11 @@ from app.services.usage_policy import get_usage_guard
 
 
 def _use_database(db: Session | None) -> bool:
-    return db is not None and db_repository.database_has_seed_data(db)
+    if db is None:
+        return False
+    if get_settings().is_deployed_environment:
+        return True
+    return db_repository.database_has_seed_data(db)
 
 
 def list_destinations(db: Session | None = None) -> list[Destination]:
@@ -108,15 +114,26 @@ def list_itineraries(
     return itineraries
 
 
-def get_itinerary(itinerary_id: str, db: Session | None = None) -> Itinerary:
+def get_itinerary(
+    itinerary_id: str,
+    db: Session | None = None,
+    current_user: CurrentUser | None = None,
+) -> Itinerary:
     if _use_database(db):
-        itinerary = db_repository.get_itinerary(db, itinerary_id)
-        if itinerary is not None and _is_public_repository_itinerary(itinerary):
+        itinerary = db_repository.get_accessible_itinerary(
+            db,
+            itinerary_id,
+            current_user=current_user,
+        )
+        if itinerary is not None:
             return itinerary
         raise not_found("itinerary", itinerary_id)
 
     for itinerary in ITINERARIES:
-        if itinerary.id == itinerary_id and _is_public_repository_itinerary(itinerary):
+        if itinerary.id == itinerary_id and db_repository.itinerary_is_accessible(
+            itinerary,
+            current_user=current_user,
+        ):
             return itinerary
     raise not_found("itinerary", itinerary_id)
 
@@ -129,10 +146,6 @@ def generate_itinerary(
 ) -> ItineraryGenerationResponse:
     usage_guard = get_usage_guard()
     usage_guard.guard_itinerary_request_bounds(duration_days=request.durationDays)
-    usage_guard.guard_itinerary_generation(
-        user_id=user_id,
-        anonymous_session_key=anonymous_session_key,
-    )
     destination = get_destination(request.destinationId, db=db)
     book = get_book(request.bookId, db=db)
 
@@ -140,6 +153,10 @@ def generate_itinerary(
         raise validation_error(
             f"Book '{request.bookId}' is not available for destination '{request.destinationId}'"
         )
+    usage_guard.guard_itinerary_generation(
+        user_id=user_id,
+        anonymous_session_key=anonymous_session_key,
+    )
 
     exact_match = _find_exact_itinerary(request, db=db)
     if exact_match is not None:

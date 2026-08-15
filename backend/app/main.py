@@ -11,6 +11,7 @@ from app.api.routes import api_router
 from app.core.auth import validate_auth_startup
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.database_readiness import validate_database_startup
 from app.core.observability import (
     EventName,
     REQUEST_ID_HEADER,
@@ -29,11 +30,13 @@ from app.services.ticketing_service import validate_ticketing_startup
 from app.services.affiliate_service import validate_affiliate_startup
 from app.services.narration_service import validate_tts_startup
 from app.services.provider_contracts import ProviderError, ProviderErrorCode
+from app.services.usage_policy import validate_usage_startup
 from app.services.vector_service import validate_vector_startup
 
 settings = get_settings()
 configure_logging()
 validate_auth_startup(settings)
+validate_database_startup(settings)
 validate_llm_startup(settings)
 validate_vector_startup(settings)
 validate_poi_provider_startup(settings)
@@ -41,6 +44,7 @@ validate_routing_startup(settings)
 validate_ticketing_startup(settings)
 validate_affiliate_startup(settings)
 validate_tts_startup(settings)
+validate_usage_startup(settings)
 
 app = FastAPI(
     title="Litinerary API",
@@ -128,6 +132,7 @@ def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse
         ProviderErrorCode.EXTERNAL_CALL_BLOCKED: status.HTTP_503_SERVICE_UNAVAILABLE,
         ProviderErrorCode.REAL_PROVIDER_DISABLED: status.HTTP_503_SERVICE_UNAVAILABLE,
         ProviderErrorCode.NOT_CONFIGURED: status.HTTP_503_SERVICE_UNAVAILABLE,
+        ProviderErrorCode.UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
     }.get(exc.code, status.HTTP_502_BAD_GATEWAY)
     log_event(
         EventName.PROVIDER_CALL_FAILED,
@@ -141,12 +146,15 @@ def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse
     settings = get_settings()
     detail = _safe_provider_error_detail(exc)
     headers = None
+    if exc.retry_after_seconds is not None:
+        headers = {"Retry-After": str(max(0, exc.retry_after_seconds))}
     if settings.app_env == "development":
         diagnostics = _provider_error_diagnostics(exc)
         if diagnostics:
             detail["diagnostics"] = diagnostics
             headers = {
-                "X-Litinerary-Provider-Diagnostics": _diagnostics_header(diagnostics)
+                **(headers or {}),
+                "X-Litinerary-Provider-Diagnostics": _diagnostics_header(diagnostics),
             }
     return JSONResponse(
         status_code=status_code,

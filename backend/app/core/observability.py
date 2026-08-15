@@ -29,6 +29,7 @@ class EventName(StrEnum):
     ADMIN_ACTION_ATTEMPTED = "admin_action_attempted"
     RATE_LIMIT_ALLOWED = "rate_limit_allowed"
     RATE_LIMIT_BLOCKED = "rate_limit_blocked"
+    USAGE_LIMITER_FAILED = "usage_limiter_failed"
     AUTH_FORBIDDEN = "auth_forbidden"
     AUTH_UNAUTHORIZED = "auth_unauthorized"
     READINESS_CHECKED = "readiness_checked"
