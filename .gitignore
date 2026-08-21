@@ -52,6 +52,9 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+*.backup
+*.dump
+*.pgdump
 backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
