@@ -6,11 +6,13 @@ Last updated: 2026-08-21
 
 Litinerary is in `PRODUCTION-HARDENING`. Stage 0 and S1-01 through S1-05 have produced a strong backend production foundation, but the repository is not yet staging-ready or launch-candidate for real users.
 
-PLU-03 local repository work is partially complete. The dependency-security preflight reproduced the PLU-02 npm audit finding, safely remediated compatible transitive packages, and left only Vitest/Vite dev-test tooling findings that are not production-runtime reachable in the approved Render static-site/backend topology. `render.yaml` now defines the intended separated Render staging/production backend/frontend/PostgreSQL structure with Auth0 placeholders and product-provider disablement. Actual Render, managed PostgreSQL, and Auth0 resources remain unprovisioned and owner-blocked.
+PLU-04 local CI/CD scaffolding is now partially complete and locally hardened. GitHub Actions workflows exist locally for PR/main/PLU-04 feature-branch validation, dependency/security checks, current and history secret-hygiene fallback, migration/config gates, Render-aligned staging deployment, production environment approval, and post-deploy health/readiness/public smoke. These workflows have not run on GitHub yet. Remote public inspection confirmed `sergioyahni/Litinerary` is public, default branch `main` is unprotected, required status checks are disabled, and remote `main` had 0 workflows before PLU-04 is pushed.
+
+PLU-03 local repository work is partially complete. The dependency-security preflight reproduced the PLU-02 npm audit finding, safely remediated compatible transitive packages, and left Vitest/Vite dev-test tooling findings for PLU-04. PLU-04 remediated those findings with a bounded Vitest `^3.2.6` upgrade, leaving frontend `npm audit` clean locally. `render.yaml` now defines the intended separated Render staging/production backend/frontend/PostgreSQL structure with Auth0 placeholders, product-provider disablement, and Node runtime pinning. Actual Render, managed PostgreSQL, and Auth0 resources remain unprovisioned and owner-blocked.
 
 PLU-01 is complete. PLU-02 local implementation is partially complete: Auth0 frontend SDK integration, session restoration, token acquisition, logout, `/api/me` hydration, protected-feature UX, and deployed dev-token isolation are implemented with placeholder-only configuration. Product and platform decisions are owner-approved in `docs/production-decisions.md`: Auth0 for managed auth, Render for frontend/backend hosting, managed PostgreSQL with Render Postgres preferred, Render-managed environment/secrets for v1, mock/curated product providers for v1, no live product providers before launch, private itinerary CRUD/share deferred, subscriber chat excluded from public v1, GitHub Actions for CI/CD, and a minimal hosted observability/backup/security/privacy launch posture.
 
-PLU-02 cannot be marked complete until real Auth0 staging resources exist and staging auth E2E passes. PLU-03 cannot be marked complete until real Render staging infrastructure and managed PostgreSQL are provisioned and validated. PLU-08 is post-launch and is not required for initial Production GO.
+PLU-02 cannot be marked complete until real Auth0 staging resources exist and staging auth E2E passes. PLU-03 cannot be marked complete until real Render staging infrastructure and managed PostgreSQL are provisioned and validated. PLU-04 cannot be marked complete until workflows are pushed/PR'd, run successfully on GitHub, and required branch/environment/security settings are verified. PLU-08 is post-launch and is not required for initial Production GO.
 
 No production feature work was implemented in PLU-01. The work was documentation and decision recording only.
 
@@ -65,7 +67,7 @@ No reset, clean, stash, revert, discard, or unrelated overwrite was performed.
 | Deployed DB could use local SQLite/mock fallback or ignore migration drift. | RESOLVED | S1-05 blocks deployed startup/readiness for missing, unavailable, unmigrated, behind, or unknown DB states. |
 | Live provider rollout had no safe production gate. | STILL OPEN | Product providers remain disabled/mock; live provider rollout still lacks staging proof, budgets, monitoring, and owner approval. |
 | Observability lacked production retention/alerts. | STILL OPEN | Structured logs/readiness exist, but no hosted alerting/monitoring config was found. |
-| CI/CD was not checked in. | STILL OPEN | `.github` directory is absent. |
+| CI/CD was not checked in. | PARTIALLY RESOLVED LOCALLY | `.github/workflows/ci.yml`, `deploy-staging.yml`, and `deploy-production.yml` now exist locally with helper scripts under `scripts/ci/`; remote execution and settings remain unverified. |
 | Frontend auth/session was development-oriented. | PARTIALLY RESOLVED | `@auth0/auth0-vue` is integrated; Auth0 login/callback/session restoration/token acquisition/logout and `/api/me` hydration are implemented. Real Auth0 staging tenant/app values and E2E proof remain missing. |
 | Missing POI stops could be silently dropped during persistence. | STILL OPEN | `itinerary_to_model()` filters stops with `if db.get(POIModel, stop.poi.id) is not None`. |
 
@@ -126,7 +128,7 @@ Auth0 auth, managed PostgreSQL, Render-hosted frontend/backend, Render-managed s
 | PLB-01 | P1 | Git checkpoint | S1-01 through S1-05 remain uncommitted and owner requires a clean checkpoint before PLU-02. | `git status --short --branch` shows dirty/untracked S1 work. | PLU-02 should not mix new auth implementation with uncheckpointed production-foundation work. | Separate owner authorization for Git commit/push operation. |
 | PLB-02 | P1 | Authentication | Auth0 frontend integration is implemented locally, but real Auth0 staging/prod tenant/app configuration and staging E2E are missing. | `frontend/src/services/authService.ts`, `frontend/src/main.ts`, `frontend/src/components/auth/AuthBootstrap.vue`, env templates, and tests show SDK integration; env inspection found no real Auth0 values. | Real users cannot safely authenticate end to end until external Auth0 resources are provisioned and tested. | Auth0 tenant/application provisioning. |
 | PLB-03 | P1 | Infrastructure | Render frontend/backend, managed PostgreSQL, Render secrets, domain/DNS/TLS, and staging/prod environments are not provisioned. | `render.yaml` now defines the intended structure, but current repo has no active Render/PostgreSQL provisioning proof. | Public traffic needs stable, secure runtime infrastructure. | Owner-provided Render/domain/DNS details and provisioning. |
-| PLB-04 | P1 | CI/CD | GitHub Actions production gates are approved but absent. | `.github` directory not found. | Manual-only validation is unsafe for production changes. | PLU-04. |
+| PLB-04 | P1 | CI/CD | GitHub Actions production gates are implemented locally but not remotely active or verified. | Local workflows and helper scripts exist; public API inspection confirmed remote `main` is unprotected, required checks are disabled, and remote `main` had 0 workflows before PLU-04 is pushed. | Local YAML alone does not protect production changes; Actions must run remotely and branch/environment protections must be enforced. | Owner-authorized feature-branch push/PR and GitHub settings activation. |
 | PLB-05 | P1 | Observability | Approved minimal hosted logs, error reporting, monitoring, alerts, and owner route are not wired. | Structured logs/readiness exist; no external alerting config found. | Production incidents may go undetected. | PLU-05 and selected tools that satisfy approved architecture. |
 | PLB-06 | P1 | Backup/recovery | Hosted backups, restore rehearsal, migration rollback, and app rollback proof are missing. | S1-05 identifies these as remaining risks. | Data loss/bad deploy recovery is unproven. | PLB-03. |
 | PLB-07 | P1 | Persistence integrity | Missing POI itinerary stops are silently dropped. | `database_repository.itinerary_to_model()` filters missing POIs. | Core itinerary data can be silently corrupted/truncated. | Engineering task. |
@@ -190,7 +192,7 @@ Infrastructure classification:
 | Render env/secrets/environment groups | Externalized config and credentials. | Approved, not configured. | How to set/read env vars, rotation approach. | PLU-03 |
 | Domain/DNS | Public URL and auth origins. | Pattern approved; literal values pending. | Domain, DNS provider, records, TLS policy. | PLU-03 |
 | Monitoring/error service | Logs, errors, uptime/readiness alerts. | Architecture approved; tool not yet configured. | Project DSN/API key, alert targets, retention. | PLU-05 |
-| CI provider/workflows | Automated validation. | GitHub repo exists; workflows absent. | Desired branch rules, secrets for staging deploy. | PLU-04 |
+| CI provider/workflows | Automated validation. | Local workflows prepared; remote `main` is currently unprotected and has no workflows. | Owner must push/PR workflows, enable Actions if needed, configure branch rules, environments, dependency/security features, and staging/prod secrets. | PLU-04 activation |
 | Backup facility | DB snapshot/restore. | No production proof. | Backup cadence, retention, restore procedure access. | PLU-06 |
 | LLM account | Post-launch live generation. | Not required for v1. | API key, model, budgets, allow-list when PLU-08 is later approved. | Post-launch PLU-08 |
 | Vector DB account | Post-launch live retrieval/search. | Not required for v1. | Endpoint, credentials, collection policy when PLU-08 is later approved. | Post-launch PLU-08 |
@@ -348,7 +350,7 @@ Current state: no checked-in `.github` workflows were found. Validation exists a
 | Provider-input risk | Live providers disabled; prompts/adapters need staging proof before live. | Conditional P1 |
 | Rate limiting/abuse | Durable controls exist; values/budgets/alerts still need production config. | P1 configuration |
 | Secrets | Templates use placeholders; production secret store not provisioned. | P1 |
-| Dependency vulnerabilities | PLU-03 manual audit triage passed for production runtime; remaining Vitest/Vite dev-test findings need CI/security gate handling. | PLU-04 |
+| Dependency vulnerabilities | PLU-04 remediated the remaining Vitest/Vite/esbuild audit chain locally with Vitest `^3.2.6`; frontend and Python audits pass locally. Remote CI proof is still pending. | PLU-04 closeout |
 | Debug/admin routes | Production/debug guards are documented; deployed verification still required in staging. | P1 smoke |
 | Exception leakage | Production `DEBUG=false` expected; staged smoke required. | P1 configuration |
 | Security headers | Not recorded complete. | P1/P2 launch hardening |
@@ -457,8 +459,8 @@ Specific dependency examples:
 | PLU-01 | Product/platform decision record and launch-scope lock. | Current audit. | Docs, env decision records, launch checklist. | Complete. | COMPLETE: approved decisions recorded in `docs/production-decisions.md`. | Gate A |
 | PLU-02 | Managed Auth0 provider and frontend session integration. | PLU-01 complete, S1 checkpoint. | `frontend/src/services/authService.ts`, auth store/router/views, env templates, backend auth smoke tests. | Auth0 provisioning details. | Local code/tests are complete; final completion requires real login/callback/token/session/refresh/logout and `/api/me` staging smoke pass with dev login absent in deployed UX. | Gate B |
 | PLU-03 | Render infrastructure and deployed environment setup. | PLU-01 complete. | Deployment docs/scripts, env templates, Render config, managed PostgreSQL config, migration/seed process. | Render/domain/DNS provisioning details. | PARTIALLY COMPLETE locally: `render.yaml`, staging contracts, provider-disablement regression, security preflight, and local validation are complete; real Render/PostgreSQL/Auth0 provisioning and staging readiness remain blocked. | Gate C |
-| PLU-04 | GitHub Actions CI/CD and security gates. | PLU-01 and PLU-03 local config baseline. | CI workflows, test scripts, migration checks, dependency/security/secret scans, smoke scripts. | Branch/deploy policy approved. | Automated backend/frontend/migration/config/security/post-deploy gates run. | Gate C |
-| PLU-05 | Observability and operational alerts. | PLU-01 and PLU-03. | Logging/error config, readiness monitors, alert docs, Render scheduled cleanup job/runbook. | Tooling may be selected/configured to satisfy approved architecture. | Logs/errors/uptime/readiness/DB/Auth0/usage alerts active; daily usage cleanup scheduled or runbooked. | Gate C |
+| PLU-04 | GitHub Actions CI/CD and security gates. | PLU-01 and PLU-03 local config baseline. | CI workflows, test scripts, migration checks, dependency/security/secret scans, smoke scripts, runtime/dependency split. | Branch/deploy policy approved; remote settings still need owner/admin activation. | PARTIALLY COMPLETE LOCALLY: workflows and local equivalents pass; final completion requires feature-branch push, remote run evidence, and active repository/environment protections. | Gate C |
+| PLU-05 | Observability and operational alerts. | PLU-01, PLU-03, and PLU-04 local CI scaffolding. | Logging/error config, readiness monitors, alert docs, Render scheduled cleanup job/runbook. | Tooling may be selected/configured to satisfy approved architecture. | Logs/errors/uptime/readiness/DB/Auth0/usage alerts active; daily usage cleanup scheduled or runbooked. | Gate C |
 | PLU-06 | Backup/restore, rollback, security headers, privacy controls. | PLU-01 and PLU-03. | Runbooks, deployment config, frontend/backend headers, privacy docs. | Backup/privacy/security policies approved. | Backup retention, restore proof, rollback proof, CSP/security headers, privacy launch controls complete. | Gate D |
 | PLU-07 | Persistence integrity and production-like staging launch rehearsal. | PLU-02 through PLU-06. | `database_repository.py`, backend tests, staging smoke/E2E docs/scripts. | GO owner. | Missing POI stops cannot be silently dropped; staging rehearsal passes all GO/NO-GO checks. | Gate D/E |
 | PLU-08 | Post-launch first live-provider rollout gate. | New owner live-provider decision after v1. | Provider adapters/config/tests/runbooks. | Yes. | One live provider has staging proof, credentials, budgets, monitoring, fallback, rollback, and owner approval. | Post-launch, not required for initial Production GO |
@@ -575,18 +577,19 @@ Classification remains `PRODUCTION-HARDENING`: backend foundations and Gate A de
 
 ## Recommended Next Implementation Unit
 
-PLU-04: GitHub Actions CI/CD, dependency/security scanning, secret hygiene, release packaging, and post-deploy smoke gates.
+Remain in PLU-04 closeout.
 
 Why next:
 
-- PLU-03 local repository work is complete enough to define the deployable shape, but real cloud provisioning is owner-blocked.
-- CI/security gates can be prepared without Render account access and should institutionalize the dependency audit, secret hygiene, frontend/backend validation, migration checks, and post-deploy smoke commands.
-- The remaining Vitest/Vite audit findings are dev-test tooling and belong in the CI/security hardening track rather than a forced PLU-03 production-runtime remediation.
+- PLU-04 is locally hardened but not code+remote closed.
+- The feature branch still needs to be pushed and observed in GitHub Actions.
+- Branch/environment/security settings still need owner/admin activation before PLU-04 can be complete.
 
 Prerequisites:
 
-- Preserve the current PLU-02/PLU-03 working tree or create an owner-authorized local checkpoint.
-- Do not push, deploy, or add cloud secrets without owner authorization.
+- Push the PLU-04 feature branch and observe GitHub Actions.
+- Open a PR if tooling/credentials allow so dependency review can run in pull request context.
+- Do not merge, deploy production, force-push, or add cloud secrets during PLU-04 closeout.
 
 Why competing tasks come later:
 
@@ -624,7 +627,7 @@ Why competing tasks come later:
 | 25 | Create definitive Production GO criteria. | DONE | Production GO Checklist uses Markdown checkboxes and covers all required areas. |
 | 26 | Create definitive Production NO-GO criteria. | DONE | Production NO-GO Criteria lists prohibitive conditions grounded in current evidence. |
 | 27 | Estimate remaining distance without fake percentage. | DONE | Remaining Distance reports gates, units, decisions, resources, and exact classification. |
-| 28 | Recommend exactly one next implementation unit. | DONE | Recommended Next Implementation Unit recommends only PLU-01 and explains sequencing. |
+| 28 | Recommend exactly one next implementation unit. | DONE | Recommended Next Implementation Unit now remains in PLU-04 closeout until remote CI/security evidence exists. |
 | 29 | Update production-development progress. | DONE | `docs/production-development-progress.md` updated with classification, v1 scope, gates, decisions, resources, units, GO/NO-GO, and next unit. |
 | 30 | Create the Production Launch Plan. | DONE | `docs/production-launch-plan.md` created with the required sections. |
 | 31 | Include one compliance row for each requirement 1 through 31. | DONE | This matrix contains rows 1 through 31 individually. |
