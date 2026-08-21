@@ -3,7 +3,7 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
 
-type AuthTokenProvider = () => string | null;
+type AuthTokenProvider = () => string | null | Promise<string | null>;
 
 let authTokenProvider: AuthTokenProvider | null = null;
 
@@ -35,7 +35,7 @@ export async function requestJson<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const token = authTokenProvider?.();
+  const token = (await authTokenProvider?.()) ?? null;
   const headers = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

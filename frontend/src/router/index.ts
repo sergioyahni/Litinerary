@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import AuthCallbackView from "../views/AuthCallbackView.vue";
 import BooksView from "../views/BooksView.vue";
 import DestinationsView from "../views/DestinationsView.vue";
 import GeneratedItineraryView from "../views/GeneratedItineraryView.vue";
@@ -57,6 +58,11 @@ const router = createRouter({
       path: "/itineraries/:id",
       name: "itinerary-detail",
       component: ItineraryDetailView,
+    },
+    {
+      path: "/auth/callback",
+      name: "auth-callback",
+      component: AuthCallbackView,
     },
     {
       path: "/account",

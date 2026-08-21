@@ -64,16 +64,16 @@ Beta/staging dry-run templates exist in `.env.beta.example` and `frontend/.env.b
 
 | Check | Required before production |
 |---|---|
-| Auth provider | Choose managed provider. Do not roll custom passwords initially. |
+| Auth provider | Auth0 selected. Do not roll custom passwords initially. |
 | Auth feature flags | Deployed envs require `ENABLE_AUTH=true`, a non-`dev` `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, production `AUTH_JWT_ALGORITHMS`, `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`, claim mapping variables, `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and the current `APP_ENV` in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`. |
-| JWT/session validation | FastAPI verifies provider JWTs using configured JWKS or provider metadata. The contract is provider-neutral; production still requires selecting and staging a real managed provider. |
+| JWT/session validation | FastAPI verifies Auth0 access tokens using configured JWKS or provider metadata. The backend contract remains provider-neutral and validates issuer, audience, algorithms, signature, expiration, and mapped claims. |
 | Registered flow | `/api/me` validates the bearer token and syncs the current provider subject to a local profile. |
 | Anonymous flow | Keep destinations/books/basic generation/public repository available. |
 | Subscriber access | Gate chat/refinement/premium features by entitlement. |
 | Admin roles | Add authenticated admin/developer role checks on top of config guards. |
 | Ownership checks | Preferences, bookmarks, reviews, chat sessions, private itinerary detail/narration, and subscriber private refinements enforce owner/admin checks server-side. Dedicated private itinerary CRUD and sharing routes remain future work. |
 | 401/403 behavior | Standardize backend responses and frontend handling. |
-| Frontend protection | Auth store, token attachment, `/api/me` sync, 401/403 handling, logout/session reset, and provider-login placeholders exist. Add real provider UI/SDK during provider selection. |
+| Frontend protection | Auth0 Vue SDK login/callback/session restoration/silent token acquisition/logout exists. The API client centrally attaches bearer tokens only when an Auth0 or local development session can provide one. `/api/me` hydrates Litinerary identity. `401` clears stale session state and requests sign-in; `403` shows denied access without a login loop. Development-token UI is hidden in Auth0/deployed mode. |
 
 ## 4. External Provider Integration Gates
 
@@ -211,7 +211,7 @@ The dry run:
 
 | Area | Status | Blockers | Recommended next prompt |
 |---|---|---|---|
-| Auth provider | Backend Contract Ready | Provider-neutral JWT validation, `/api/me`, claim mapping, local profile sync, deployed startup fail-fast checks, and admin-role checks exist. A real managed provider and frontend SDK/login flow are still not selected, configured, or stage-tested. | "Select provider and implement frontend managed-auth login/session integration." |
+| Auth provider | Locally Integrated, Staging Blocked | Auth0 is selected; frontend SDK login/callback/session/token/logout and `/api/me` hydration are implemented and unit-tested. Backend provider-neutral JWT validation, claim mapping, local profile sync, deployed startup fail-fast checks, and admin-role checks remain intact. Real Auth0 staging tenant/app values are not available, so staging E2E is blocked. | "Provision Auth0 staging resources and run auth E2E." |
 | LLM provider | Almost Ready | OpenAI-compatible adapter boundary, grounding checks, structured judge results, and mocked contract tests exist, but production traffic still needs rate limiting, spend enforcement, prompt/version governance, monitoring, and explicit integration-test opt-in. | "Add gated live LLM integration tests, spend enforcement, and provider observability before production LLM traffic." |
 | Vector DB | Almost Ready | Qdrant adapter boundary, contract tests, and metadata model exist, but production deployment still needs a real Qdrant environment, explicit backfill execution, deletion/retention policy, and monitoring. | "Implement gated Qdrant integration test profile and vector backfill executor with deletion policy." |
 | POI provider | Almost Ready | Google Places adapter boundary, mocked contract tests, confidence policy, and persistence metadata exist, but production traffic still needs real credentials, rate limiting, monitoring, terms review, and explicit integration-test opt-in. | "Add gated live Google Places integration tests and provider observability before production POI traffic." |
@@ -222,7 +222,7 @@ The dry run:
 
 ## 9. Recommended Next Prompts
 
-1. "Select and configure managed auth provider in staging with mocked fallback disabled."
+1. "Provision Auth0 staging resources and run auth E2E with mocked fallback disabled."
 2. "Implement gated Qdrant integration test profile and vector backfill executor with deletion policy."
 3. "Add gated live Google Places integration tests and provider observability before production POI traffic."
 4. "Add gated live OpenRouteService integration tests and routing observability before production route traffic."

@@ -12,7 +12,15 @@
         <h2>Subscriber access required</h2>
         <p>This chat is available only to active subscribers. Payments and billing are not implemented.</p>
         <button
-          v-if="authStore.isAuthEnabled"
+          v-if="authStore.isAuth0Enabled && !authStore.isAuthenticated"
+          class="button compact-button"
+          type="button"
+          @click="authStore.login('/subscriber/chat')"
+        >
+          Sign In
+        </button>
+        <button
+          v-else-if="authStore.canLoginWithDevelopmentToken"
           class="button compact-button"
           type="button"
           @click="authStore.loginDevelopmentSubscriber()"

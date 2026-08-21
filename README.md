@@ -97,12 +97,26 @@ Current auth foundation:
 - Auth is disabled by default, so anonymous destination/book browsing, public repository browsing, and basic public itinerary generation still work.
 - When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user-specific endpoints require a bearer token.
 - Local/test development supports mock bearer tokens: `dev:<user_id>:<roles>:<subscription_status>`.
-- Managed JWT validation is available for non-`dev` providers using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`; JWKS/provider metadata retrieval is blocked unless `ALLOW_EXTERNAL_CALLS=true` and `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
+- Auth0 is the selected managed auth provider. The frontend uses `@auth0/auth0-vue` for SPA login, callback processing, session restoration, silent access-token acquisition, and logout.
+- Managed JWT validation is available for Auth0 through the provider-neutral backend contract using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`; JWKS/provider metadata retrieval is blocked unless `ALLOW_EXTERNAL_CALLS=true` and `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - `GET /api/me` syncs the current authenticated subject to a local user profile.
 - Development fallback to `dev-reader` is allowed only in development/test when `AUTH_ALLOW_DEV_USER_FALLBACK=true`; beta/staging/production reject it.
 - Deployed environments (`internal`, `beta`, `staging`, and `production`) fail startup unless auth is enabled with a managed provider label, issuer, audience, production JWT algorithms, JWKS or provider metadata, `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and the current environment listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - Production must not use `AUTH_PROVIDER=dev`; configure and stage-test a managed provider before production traffic.
 - Itinerary detail and narration are public for public repository rows and owner/admin-only for private or unlisted rows. Unauthorized private itinerary IDs return `404`, matching missing-resource behavior.
+
+Frontend Auth0 configuration:
+
+- `VITE_AUTH_PROVIDER=auth0`
+- `VITE_AUTH0_DOMAIN`
+- `VITE_AUTH0_CLIENT_ID`
+- `VITE_AUTH0_AUDIENCE`
+- `VITE_AUTH0_CALLBACK_URL`, normally `/auth/callback` on the frontend origin
+- `VITE_AUTH0_LOGOUT_RETURN_URL`
+- `VITE_AUTH0_USE_REFRESH_TOKENS=false` by default; the SDK uses in-memory token cache and Auth0 silent session checks.
+- `VITE_AUTH0_CACHE_LOCATION=memory` by default; use `localstorage` only after accepting the higher XSS persistence risk.
+
+Staging and production must use separate Auth0 tenants/apps, audiences, callback URLs, logout URLs, allowed web origins, and backend issuer/JWKS settings. The frontend obtains an Auth0 access token only when an SDK-authenticated session exists, attaches `Authorization: Bearer <access-token>` centrally through the API client, calls `/api/me`, and treats the returned backend profile as the Litinerary identity. Public anonymous endpoints continue without a bearer token. Deployed UI does not expose development-token login.
 
 Initialize the schema with Alembic:
 
@@ -388,11 +402,11 @@ Provider integration and production readiness docs:
 - Data is local mock data, not production content.
 - Itinerary generation is deterministic and mock-based.
 - Public repository persistence is SQLite-backed after database initialization and seeding; otherwise the Phase 1 in-memory mock fallback is used.
-- User accounts are a Phase 2 foundation identified locally by auth subject/user ID. A feature-flagged auth boundary and managed JWT validation exist, but there is no OAuth UI, password login, account recovery, or live provider configuration committed.
+- User accounts are backed by the verified auth subject returned through `/api/me`. The frontend has Auth0 SPA login/session/logout integration, but real Auth0 tenant/app values are not committed and real staging E2E remains blocked until external Auth0 resources are provisioned.
 - Vector search uses deterministic fake embeddings and an in-memory store by default. A gated Qdrant adapter boundary exists, but no real Vector DB is enabled without `ENABLE_REAL_VECTOR_DB=true`.
 - Map lines use day-level route geometry when available and straight-line mock geometry otherwise. Production route optimization, transit routing, and turn-by-turn UX remain future work.
 - Ticketing notes are static mock text, not live ticket inventory or booking links. The Google Places POI adapter may preserve a provider-supplied public place URL, but ticket inventory remains out of scope for the future ticketing adapter.
-- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. There is no connected managed authentication provider, e-commerce, affiliate, payment, or production ticketing integration.
+- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. Auth0 frontend integration exists with placeholder configuration only; e-commerce, affiliate, payment, and production ticketing integration are not connected.
 
 ## Future Implementation Phases
 

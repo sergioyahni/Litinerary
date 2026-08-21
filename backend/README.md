@@ -60,7 +60,7 @@ Production expectations:
 - Leave `ENABLE_DEBUG_ROUTES=false`.
 - Leave `ENABLE_MOCK_SERVICES=false` unless intentionally running a protected mock environment.
 - Leave all `ENABLE_REAL_*` provider flags disabled until the matching adapter contract tests, cost controls, secrets, and monitoring are in place.
-- Deployed environments (`internal`, `beta`, `staging`, and `production`) must enable managed auth before startup. Configure `ENABLE_AUTH=true`, `AUTH_PROVIDER` to a non-`dev` provider label, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, production `AUTH_JWT_ALGORITHMS`, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`. Set `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and include the current `APP_ENV` in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
+- Deployed environments (`internal`, `beta`, `staging`, and `production`) must enable managed auth before startup. Auth0 is the selected provider for PLU-02, but the backend contract remains provider-neutral. Configure `ENABLE_AUTH=true`, `AUTH_PROVIDER=auth0`, `AUTH_JWT_ISSUER=https://<auth0-environment-domain>/`, `AUTH_JWT_AUDIENCE` to the Auth0 API identifier used by the SPA, production `AUTH_JWT_ALGORITHMS=RS256`, and either `AUTH_JWKS_URL=https://<auth0-environment-domain>/.well-known/jwks.json` or `AUTH_PROVIDER_METADATA_URL=https://<auth0-environment-domain>/.well-known/openid-configuration`. Set `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and include the current `APP_ENV` in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - Never use `AUTH_PROVIDER=dev` as deployed authentication.
 - Keep provider credentials out of the repository.
 
@@ -102,7 +102,7 @@ Auth foundation variables:
 
 - `ENABLE_AUTH`: enables the backend auth boundary.
 - `AUTH_REQUIRED_FOR_USER_FEATURES`: requires auth for profile, preferences, bookmarks, reviews, and mock recommendations. It must be `true` in deployed environments; route guards also fail closed for deployed user features.
-- `AUTH_PROVIDER`: `dev` for local/test tokens, or a provider label such as `oidc` for managed JWT validation.
+- `AUTH_PROVIDER`: `dev` for local/test tokens, or `auth0` for deployed managed JWT validation.
 - `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`: required for managed-provider JWT validation.
 - `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`: required for managed-provider signature validation.
 - Managed-provider JWKS/provider metadata requests follow the global external-call policy: keep `ALLOW_EXTERNAL_CALLS=false` for standard local/test/demo runs.
@@ -397,7 +397,7 @@ The Phase 2 account foundation is intentionally simple. Users are identified by 
 - `POST /api/users/{user_id}/reviews`
 - `GET /api/users/{user_id}/reviews`
 
-This supports profile records, preferences, itinerary bookmarks, and reviews. A feature-flagged auth boundary can protect these routes with local/test tokens or managed JWT validation. `GET /api/me` syncs the current bearer-token subject to a local user profile. There are no passwords, sessions, OAuth UI, provider SDK integration, or account recovery flows yet. Anonymous destination/book browsing and itinerary generation remain available.
+This supports profile records, preferences, itinerary bookmarks, and reviews. A feature-flagged auth boundary protects these routes with local/test tokens or Auth0-managed JWT validation. `GET /api/me` syncs the current bearer-token subject to a local user profile. Passwords and account recovery are delegated to Auth0; Litinerary does not implement local credentials. Anonymous destination/book browsing and itinerary generation remain available.
 
 ## Vector Service Foundation
 
@@ -444,4 +444,4 @@ This route requires `ENABLE_DEBUG_ROUTES=true` and fake vector services require 
 
 This is only a Phase 2 foundation: no OpenAI, Pinecone, Qdrant, Milvus, or external embedding/vector service is called.
 
-No production ticketing, payment, e-commerce, or live managed authentication provider configuration is implemented yet. OpenAI-compatible LLM, Qdrant, Google Places, OpenRouteService, and managed-JWT auth boundaries exist behind feature flags, but local development and standard tests continue to use fake/mock providers by default.
+No production ticketing, payment, e-commerce, or real Auth0 tenant configuration is committed. The frontend Auth0 SDK integration and backend managed-JWT boundary exist, but staging/prod Auth0 tenant/app values must be configured outside Git before real users can sign in. OpenAI-compatible LLM, Qdrant, Google Places, OpenRouteService, and managed-JWT auth boundaries exist behind feature flags, but local development and standard tests continue to use fake/mock providers by default.
