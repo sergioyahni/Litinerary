@@ -82,8 +82,10 @@ async def request_logging_middleware(request: Request, call_next):
             category="api",
             method=request.method,
             path=request.url.path,
+            status_code=500,
             latency_ms=elapsed_ms(started_at),
             error_type=exc.__class__.__name__,
+            success=False,
         )
         raise
     finally:
@@ -139,9 +141,11 @@ def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse
         level=logging.WARNING,
         category="provider",
         path=request.url.path,
+        status_code=status_code,
         error_type=exc.code.value,
         provider_type=exc.metadata.provider_type if exc.metadata else None,
         provider_name=exc.metadata.provider_name if exc.metadata else None,
+        success=False,
     )
     settings = get_settings()
     detail = _safe_provider_error_detail(exc)

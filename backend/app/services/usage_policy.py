@@ -917,6 +917,47 @@ def validate_usage_startup(settings: Settings | None = None) -> None:
         )
 
 
+def cleanup_expired_usage_counters(
+    *,
+    settings: Settings | None = None,
+    store: UsageCounterStore | None = None,
+    at: datetime | None = None,
+) -> int:
+    resolved = settings or get_settings()
+    resolved_at = _utc_now(at)
+    before = resolved_at - timedelta(days=resolved.usage_counter_retention_days)
+    counter_store = store or (
+        DatabaseUsageCounterStore()
+        if resolved.enable_durable_usage_controls
+        else InMemoryProviderUsageStore()
+    )
+    try:
+        rows_removed = counter_store.cleanup_expired(before=before)
+    except Exception as exc:
+        log_event(
+            EventName.USAGE_COUNTER_CLEANUP_FAILED,
+            level=40,
+            category="usage_policy",
+            operation="cleanup_expired_usage_counters",
+            durable=counter_store.durable,
+            retention_days=resolved.usage_counter_retention_days,
+            error_type=exc.__class__.__name__,
+            success=False,
+        )
+        raise
+    log_event(
+        EventName.USAGE_COUNTER_CLEANUP_COMPLETED,
+        category="usage_policy",
+        operation="cleanup_expired_usage_counters",
+        durable=counter_store.durable,
+        retention_days=resolved.usage_counter_retention_days,
+        rows_removed=rows_removed,
+        cutoff=before.isoformat(),
+        success=True,
+    )
+    return rows_removed
+
+
 def _usage_subject(
     *,
     user_id: str | None = None,

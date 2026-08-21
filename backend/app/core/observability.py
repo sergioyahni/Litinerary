@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
@@ -30,6 +31,8 @@ class EventName(StrEnum):
     RATE_LIMIT_ALLOWED = "rate_limit_allowed"
     RATE_LIMIT_BLOCKED = "rate_limit_blocked"
     USAGE_LIMITER_FAILED = "usage_limiter_failed"
+    USAGE_COUNTER_CLEANUP_COMPLETED = "usage_counter_cleanup_completed"
+    USAGE_COUNTER_CLEANUP_FAILED = "usage_counter_cleanup_failed"
     AUTH_FORBIDDEN = "auth_forbidden"
     AUTH_UNAUTHORIZED = "auth_unauthorized"
     READINESS_CHECKED = "readiness_checked"
@@ -90,6 +93,7 @@ def log_event(
         "event": str(event_name),
         "category": category,
         "request_id": fields.pop("request_id", None) or current_request_id(),
+        "app_env": _current_app_env(),
         **_redact(fields),
     }
     logger.log(level, json.dumps(payload, sort_keys=True, separators=(",", ":")))
@@ -168,3 +172,10 @@ def _redact(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_redact(item) for item in value)
     return value
+
+
+def _current_app_env() -> str:
+    value = os.getenv("APP_ENV", "development").strip().lower()
+    if value in {"development", "test", "internal", "beta", "staging", "production"}:
+        return value
+    return "development"

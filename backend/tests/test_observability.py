@@ -2,9 +2,11 @@ import json
 import logging
 
 import pytest
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app.core.config import Settings, get_settings
+from app.core.database import get_db
 from app.core.observability import (
     EventName,
     ProviderTelemetry,
@@ -12,7 +14,7 @@ from app.core.observability import (
     record_provider_telemetry,
 )
 from app.core.readiness import provider_status
-from app.main import provider_error_handler
+from app.main import app, provider_error_handler
 from app.services.provider_contracts import (
     ProviderError,
     ProviderErrorCode,
@@ -128,6 +130,43 @@ def test_structured_log_redacts_sensitive_fields(caplog) -> None:
     assert payload["api_key"] == "[redacted]"
     assert payload["token"] == "[redacted]"
     assert payload["safe_value"] == "visible"
+    assert payload["app_env"] in {
+        "development",
+        "test",
+        "internal",
+        "beta",
+        "staging",
+        "production",
+    }
+
+
+def test_api_exception_produces_correlated_failure_event(caplog, db_session) -> None:
+    caplog.set_level(logging.INFO, logger="litinerary")
+    path = "/api/test-observability-failure"
+    if not any(route.path == path for route in app.routes):
+
+        @app.get(path)
+        def test_observability_failure_route() -> None:
+            raise RuntimeError("synthetic failure with token=redacted-test-token")
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app, raise_server_exceptions=False) as test_client:
+            response = test_client.get(path, headers={"X-Request-ID": "req-incident-drill"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    events = _json_messages(caplog)
+    failure = next(item for item in events if item["event"] == EventName.API_REQUEST_FAILED)
+    assert failure["request_id"] == "req-incident-drill"
+    assert failure["status_code"] == 500
+    assert failure["success"] is False
+    assert failure["error_type"] == "RuntimeError"
+    assert "redacted-test-token" not in "\n".join(record.message for record in caplog.records)
 
 
 def test_structured_log_redacts_nested_sentinel_values(caplog) -> None:
