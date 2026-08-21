@@ -4,11 +4,11 @@ Date: 2026-08-21
 
 Repository: `C:\Users\syahn\source\litinerary`
 
-PLU-04 STATUS: PARTIAL - CODE AND BRANCH CI COMPLETE, OWNER SETTINGS / PR CONTEXT PENDING
+PLU-04 STATUS: CODE COMPLETE - OWNER ACTIVATION REQUIRED
 
 ## 1. Verdict
 
-PLU-04 code is implemented, committed, pushed to a feature branch, and validated by a real GitHub Actions branch run. It is still not fully complete because GitHub owner/admin protections and pull-request-only dependency review evidence remain pending.
+PLU-04 code is implemented, committed, pushed to a feature branch, and validated by a real GitHub Actions branch run at the current branch head. It is code-complete, but owner/admin activation remains required because no pull request exists, Dependency Review has not run in PR context, and `main` has no branch protection or required checks.
 
 ## 2. Previous Report Corrections
 
@@ -59,6 +59,7 @@ Commits pushed to `origin/plu-04-github-actions-cicd`:
 
 - `77e859c92064582b05f8b7af5a3ec8906ed6a64c` - `Add PLU-04 GitHub Actions CI/CD gates`
 - `c0fed4fd63b26c24b4d38e15e615af31f90d221a` - `Fix PowerShell preflight tests on CI runners`
+- `3f00857c5a1e6f5a0864281545b801574e09f5d4` - `Update PLU-04 closeout evidence`
 
 ## 4. Workflow Security Audit
 
@@ -199,7 +200,7 @@ Passed on 2026-08-21:
 At closeout after push:
 
 - Local branch: `plu-04-github-actions-cicd`
-- Local HEAD / remote branch HEAD: `c0fed4fd63b26c24b4d38e15e615af31f90d221a`
+- Local HEAD / remote branch HEAD: `3f00857c5a1e6f5a0864281545b801574e09f5d4`
 - Remote `origin/main`: `86a40dc90ff7dcfd4497ef1da190dc2da35e73ca`
 - The feature branch contains the two prior local commits plus the PLU-04 commits.
 - `main` was not pushed.
@@ -208,6 +209,47 @@ Remote branch:
 
 - `origin/plu-04-github-actions-cicd`
 - PR URL offered by GitHub: `https://github.com/sergioyahni/Litinerary/pull/new/plu-04-github-actions-cicd`
+
+Cumulative commits proposed by the branch:
+
+- `e9fc587 Complete production foundation through PLU-01`
+- `8263cf1 Add Auth0 integration and Render staging foundation`
+- `77e859c Add PLU-04 GitHub Actions CI/CD gates`
+- `c0fed4f Fix PowerShell preflight tests on CI runners`
+- `3f00857 Update PLU-04 closeout evidence`
+
+## 10a. Cumulative Diff Audit
+
+The cumulative proposed merge from `origin/main` to `origin/plu-04-github-actions-cicd` is intentional and semantically coherent.
+
+Earlier commits predate PLU-04:
+
+- `e9fc587` belongs to PLU-01 and Stage 1 production foundation work: production decisions, durable usage controls, ownership/security, database readiness, environment templates, migration/test/report foundations.
+- `8263cf1` belongs to PLU-02/PLU-03 local production-hardening: Auth0 frontend/session integration, Render blueprint/staging foundation, provider-disablement regression, and associated docs/tests.
+
+Those earlier commits are intentionally part of this cumulative production-hardening branch because PLU-04 validates the repository state produced by those foundations: Auth0 config posture, Render config, migrations, seed/readiness checks, dependency manifests, and test suites. PLU-04 depends on them for meaningful CI coverage.
+
+Audit results:
+
+- `git diff --stat origin/main...origin/plu-04-github-actions-cicd`: 118 files, 11,738 insertions, 1,634 deletions.
+- No generated database, SQLite, log, PID, temp, `node_modules`, `dist`, or build artifacts are present in the cumulative diff.
+- Filename review flagged only placeholder env templates and `scripts/ci/secret_hygiene.py`.
+- Current-tree and reachable-history secret scans passed.
+- No unrelated, accidental, credential-bearing, local-only debug, generated, or temporary content was found.
+
+## 10b. Pull Request State
+
+No pull request exists from `sergioyahni:plu-04-github-actions-cicd` to `main`.
+
+Attempted supported draft PR creation through the authenticated GitHub connector failed:
+
+- Result: `403 Resource not accessible by integration`
+
+OWNER ACTION REQUIRED - open draft PR from `plu-04-github-actions-cicd` to `main`.
+
+Compare/PR URL:
+
+- `https://github.com/sergioyahni/Litinerary/pull/new/plu-04-github-actions-cicd`
 
 ## 11. GitHub Actions Results
 
@@ -219,7 +261,8 @@ Remote GitHub Actions results:
   - Likely cause was a Windows-only `powershell.exe` assumption in `backend/tests/test_live_llm_preflight.py`.
 - Follow-up fix: `c0fed4fd63b26c24b4d38e15e615af31f90d221a` made PowerShell test helpers use `powershell.exe` on Windows and `pwsh` on non-Windows runners.
 - Second branch run: `32504034854`, commit `c0fed4fd63b26c24b4d38e15e615af31f90d221a`, conclusion `success`.
-- Successful run URL: `https://github.com/sergioyahni/Litinerary/actions/runs/32504034854`
+- Current-head branch run: `32504478112`, commit `3f00857c5a1e6f5a0864281545b801574e09f5d4`, conclusion `success`.
+- Current-head successful run URL: `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112`
 
 Successful jobs:
 
@@ -236,27 +279,63 @@ Skipped as expected on branch push:
 
 - `GitHub dependency review`, because it is intentionally gated to `pull_request` events.
 
+PR-context CI:
+
+- Not available because no PR exists.
+- Dependency Review status: `SKIPPED` on branch push; must run after owner opens the draft PR.
+
+Job-level evidence for current-head branch run `32504478112`:
+
+| Check/job | Status | Conclusion | Head SHA | URL |
+|---|---|---|---|---|
+| Workflow policy | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441416` |
+| Secret hygiene | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441576` |
+| Backend pytest | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441579` |
+| Migration and seed | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441756` |
+| Config profile validation | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441702` |
+| Render offline preflight | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441700` |
+| Frontend typecheck, tests, build | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441566` |
+| Dependency security | completed | success | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841441508` |
+| GitHub dependency review | completed | skipped | `3f00857c5a1e6f5a0864281545b801574e09f5d4` | `https://github.com/sergioyahni/Litinerary/actions/runs/32504478112/job/96841442602` |
+
 ## 12. GitHub Owner Actions
 
-Owner/admin actions required before PLU-04 can be marked complete:
+Owner/admin action matrix:
 
-- Enable/confirm GitHub Actions.
-- Open a PR from the PLU-04 feature branch to `main`.
-- Require CI status checks before merge.
-- Protect `main` or configure an equivalent ruleset.
-- Disable force-pushes and deletion on `main`.
-- Configure `staging` and `production` GitHub Environments.
-- Add production required reviewers.
-- Add environment secrets and variables:
-  - `STAGING_DATABASE_URL`
-  - `RENDER_STAGING_DEPLOY_HOOK_URL`
-  - `STAGING_BACKEND_BASE_URL`
-  - `PRODUCTION_DATABASE_URL`
-  - `RENDER_PRODUCTION_DEPLOY_HOOK_URL`
-  - `PRODUCTION_BACKEND_BASE_URL`
-- Enable GitHub secret scanning/push protection where available.
-- Enable dependency graph and dependency review where available.
-- Consider CodeQL/code scanning as launch hardening if available for the repository/account.
+| Area | State | Evidence / required action |
+|---|---|---|
+| GitHub Actions | VERIFIED | Hosted Actions runs exist and current-head CI run `32504478112` passed. |
+| Pull request existence | OWNER ACTION REQUIRED | No PR exists. Connector PR creation failed with `403 Resource not accessible by integration`. Open draft PR from `plu-04-github-actions-cicd` to `main`. |
+| PR-context CI | OWNER ACTION REQUIRED | No PR exists; run all required checks after draft PR is opened. |
+| Dependency Review | OWNER ACTION REQUIRED | Branch-push job skipped as designed. Must run in PR context. |
+| Dependency graph / Dependabot alerts | OWNER ACTION REQUIRED | Public API check returned `401 Requires authentication`; owner must verify dependency graph/alerts are enabled where available. |
+| `main` branch protection/ruleset | NOT CONFIGURED | Public branch API reports `protected: false`. |
+| Required status checks | NOT CONFIGURED | Public branch API reports required checks enforcement `off` with empty checks/contexts. |
+| Staging Environment | NOT CONFIGURED | Public environments API returned `total_count: 0`. |
+| Production Environment | NOT CONFIGURED | Public environments API returned `total_count: 0`. |
+| Production required reviewer | NOT CONFIGURED | No production environment exists. |
+| Environment-scoped secrets | OWNER ACTION REQUIRED | Configure only after environments exist; values must remain out of source control. |
+| Secret-scanning alert review | OWNER ACTION REQUIRED | API requires authentication; owner must verify alert review. |
+| Push protection | OWNER ACTION REQUIRED | Not publicly determinable; owner must enable/verify where available. |
+| CodeQL/code scanning posture | OWNER ACTION REQUIRED | API requires authentication; CodeQL is launch hardening, not a new PLU-04 blocker unless owner policy requires it. |
+
+Required target `main` policy:
+
+- Pull request required before merge.
+- Required CI checks enabled using the observed check names:
+  - `Workflow policy`
+  - `Secret hygiene`
+  - `Backend pytest`
+  - `Migration and seed`
+  - `Config profile validation`
+  - `Render offline preflight`
+  - `Frontend typecheck, tests, build`
+  - `Dependency security`
+  - `GitHub dependency review`
+- Force-push disabled.
+- Branch deletion disabled.
+- Stale approval handling documented if configured.
+- Administrator bypass posture explicitly recorded.
 
 ## 13. Remaining Production-GO Blockers
 
@@ -264,7 +343,7 @@ Production remains NO-GO.
 
 Open blockers:
 
-- PLU-04 branch CI is proven green, but PR dependency review and GitHub branch/environment/security protections are not yet proven.
+- PLU-04 branch CI is proven green at current head, but no PR exists, PR dependency review has not run, and GitHub branch/environment/security protections are not yet configured.
 - Real Auth0 staging/production resources are still unprovisioned.
 - Real Render backend/frontend/PostgreSQL resources are still unprovisioned.
 - Managed DB backup/restore/rollback evidence is missing.
