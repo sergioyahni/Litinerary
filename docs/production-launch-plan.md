@@ -6,7 +6,7 @@ Last updated: 2026-08-21
 
 Litinerary is in `PRODUCTION-HARDENING`. Stage 0 and S1-01 through S1-05 have produced a strong backend production foundation, but the repository is not yet staging-ready or launch-candidate for real users.
 
-PLU-04 local CI/CD scaffolding is now partially complete and locally hardened. GitHub Actions workflows exist locally for PR/main/PLU-04 feature-branch validation, dependency/security checks, current and history secret-hygiene fallback, migration/config gates, Render-aligned staging deployment, production environment approval, and post-deploy health/readiness/public smoke. These workflows have not run on GitHub yet. Remote public inspection confirmed `sergioyahni/Litinerary` is public, default branch `main` is unprotected, required status checks are disabled, and remote `main` had 0 workflows before PLU-04 is pushed.
+PLU-04 CI/CD scaffolding is partially complete and feature-branch validated. GitHub Actions workflows exist for PR/main/PLU-04 feature-branch validation, dependency/security checks, current and history secret-hygiene fallback, migration/config gates, Render-aligned staging deployment, production environment approval, and post-deploy health/readiness/public smoke. The feature branch `origin/plu-04-github-actions-cicd` passed remote branch CI run `32504034854` at commit `c0fed4fd63b26c24b4d38e15e615af31f90d221a`. Remote public inspection confirmed `sergioyahni/Litinerary` is public, default branch `main` is unprotected, required status checks are disabled, and remote `main` had 0 workflows before PLU-04 is merged.
 
 PLU-03 local repository work is partially complete. The dependency-security preflight reproduced the PLU-02 npm audit finding, safely remediated compatible transitive packages, and left Vitest/Vite dev-test tooling findings for PLU-04. PLU-04 remediated those findings with a bounded Vitest `^3.2.6` upgrade, leaving frontend `npm audit` clean locally. `render.yaml` now defines the intended separated Render staging/production backend/frontend/PostgreSQL structure with Auth0 placeholders, product-provider disablement, and Node runtime pinning. Actual Render, managed PostgreSQL, and Auth0 resources remain unprovisioned and owner-blocked.
 
@@ -128,7 +128,7 @@ Auth0 auth, managed PostgreSQL, Render-hosted frontend/backend, Render-managed s
 | PLB-01 | P1 | Git checkpoint | S1-01 through S1-05 remain uncommitted and owner requires a clean checkpoint before PLU-02. | `git status --short --branch` shows dirty/untracked S1 work. | PLU-02 should not mix new auth implementation with uncheckpointed production-foundation work. | Separate owner authorization for Git commit/push operation. |
 | PLB-02 | P1 | Authentication | Auth0 frontend integration is implemented locally, but real Auth0 staging/prod tenant/app configuration and staging E2E are missing. | `frontend/src/services/authService.ts`, `frontend/src/main.ts`, `frontend/src/components/auth/AuthBootstrap.vue`, env templates, and tests show SDK integration; env inspection found no real Auth0 values. | Real users cannot safely authenticate end to end until external Auth0 resources are provisioned and tested. | Auth0 tenant/application provisioning. |
 | PLB-03 | P1 | Infrastructure | Render frontend/backend, managed PostgreSQL, Render secrets, domain/DNS/TLS, and staging/prod environments are not provisioned. | `render.yaml` now defines the intended structure, but current repo has no active Render/PostgreSQL provisioning proof. | Public traffic needs stable, secure runtime infrastructure. | Owner-provided Render/domain/DNS details and provisioning. |
-| PLB-04 | P1 | CI/CD | GitHub Actions production gates are implemented locally but not remotely active or verified. | Local workflows and helper scripts exist; public API inspection confirmed remote `main` is unprotected, required checks are disabled, and remote `main` had 0 workflows before PLU-04 is pushed. | Local YAML alone does not protect production changes; Actions must run remotely and branch/environment protections must be enforced. | Owner-authorized feature-branch push/PR and GitHub settings activation. |
+| PLB-04 | P1 | CI/CD | GitHub Actions production gates are implemented and branch-CI verified, but not yet enforced on `main` or PR-reviewed. | Feature branch CI run `32504034854` passed; public API inspection confirmed remote `main` is unprotected, required checks are disabled, and remote `main` had 0 workflows before PLU-04 is merged. Dependency review skipped on branch push because it requires PR context. | Branch CI alone does not protect production changes; Actions must be required on `main`, dependency review must run in PR context, and branch/environment protections must be enforced. | Owner/admin PR and GitHub settings activation. |
 | PLB-05 | P1 | Observability | Approved minimal hosted logs, error reporting, monitoring, alerts, and owner route are not wired. | Structured logs/readiness exist; no external alerting config found. | Production incidents may go undetected. | PLU-05 and selected tools that satisfy approved architecture. |
 | PLB-06 | P1 | Backup/recovery | Hosted backups, restore rehearsal, migration rollback, and app rollback proof are missing. | S1-05 identifies these as remaining risks. | Data loss/bad deploy recovery is unproven. | PLB-03. |
 | PLB-07 | P1 | Persistence integrity | Missing POI itinerary stops are silently dropped. | `database_repository.itinerary_to_model()` filters missing POIs. | Core itinerary data can be silently corrupted/truncated. | Engineering task. |
@@ -192,7 +192,7 @@ Infrastructure classification:
 | Render env/secrets/environment groups | Externalized config and credentials. | Approved, not configured. | How to set/read env vars, rotation approach. | PLU-03 |
 | Domain/DNS | Public URL and auth origins. | Pattern approved; literal values pending. | Domain, DNS provider, records, TLS policy. | PLU-03 |
 | Monitoring/error service | Logs, errors, uptime/readiness alerts. | Architecture approved; tool not yet configured. | Project DSN/API key, alert targets, retention. | PLU-05 |
-| CI provider/workflows | Automated validation. | Local workflows prepared; remote `main` is currently unprotected and has no workflows. | Owner must push/PR workflows, enable Actions if needed, configure branch rules, environments, dependency/security features, and staging/prod secrets. | PLU-04 activation |
+| CI provider/workflows | Automated validation. | Feature-branch workflows pass remote branch CI; remote `main` is currently unprotected and has no workflows. | Owner must open/merge via PR, configure branch rules, environments, dependency/security features, and staging/prod secrets. | PLU-04 activation |
 | Backup facility | DB snapshot/restore. | No production proof. | Backup cadence, retention, restore procedure access. | PLU-06 |
 | LLM account | Post-launch live generation. | Not required for v1. | API key, model, budgets, allow-list when PLU-08 is later approved. | Post-launch PLU-08 |
 | Vector DB account | Post-launch live retrieval/search. | Not required for v1. | Endpoint, credentials, collection policy when PLU-08 is later approved. | Post-launch PLU-08 |
@@ -350,7 +350,7 @@ Current state: no checked-in `.github` workflows were found. Validation exists a
 | Provider-input risk | Live providers disabled; prompts/adapters need staging proof before live. | Conditional P1 |
 | Rate limiting/abuse | Durable controls exist; values/budgets/alerts still need production config. | P1 configuration |
 | Secrets | Templates use placeholders; production secret store not provisioned. | P1 |
-| Dependency vulnerabilities | PLU-04 remediated the remaining Vitest/Vite/esbuild audit chain locally with Vitest `^3.2.6`; frontend and Python audits pass locally. Remote CI proof is still pending. | PLU-04 closeout |
+| Dependency vulnerabilities | PLU-04 remediated the remaining Vitest/Vite/esbuild audit chain with Vitest `^3.2.6`; frontend and Python audits pass locally and in remote branch CI. PR dependency review is still pending. | PLU-04 closeout |
 | Debug/admin routes | Production/debug guards are documented; deployed verification still required in staging. | P1 smoke |
 | Exception leakage | Production `DEBUG=false` expected; staged smoke required. | P1 configuration |
 | Security headers | Not recorded complete. | P1/P2 launch hardening |
@@ -459,7 +459,7 @@ Specific dependency examples:
 | PLU-01 | Product/platform decision record and launch-scope lock. | Current audit. | Docs, env decision records, launch checklist. | Complete. | COMPLETE: approved decisions recorded in `docs/production-decisions.md`. | Gate A |
 | PLU-02 | Managed Auth0 provider and frontend session integration. | PLU-01 complete, S1 checkpoint. | `frontend/src/services/authService.ts`, auth store/router/views, env templates, backend auth smoke tests. | Auth0 provisioning details. | Local code/tests are complete; final completion requires real login/callback/token/session/refresh/logout and `/api/me` staging smoke pass with dev login absent in deployed UX. | Gate B |
 | PLU-03 | Render infrastructure and deployed environment setup. | PLU-01 complete. | Deployment docs/scripts, env templates, Render config, managed PostgreSQL config, migration/seed process. | Render/domain/DNS provisioning details. | PARTIALLY COMPLETE locally: `render.yaml`, staging contracts, provider-disablement regression, security preflight, and local validation are complete; real Render/PostgreSQL/Auth0 provisioning and staging readiness remain blocked. | Gate C |
-| PLU-04 | GitHub Actions CI/CD and security gates. | PLU-01 and PLU-03 local config baseline. | CI workflows, test scripts, migration checks, dependency/security/secret scans, smoke scripts, runtime/dependency split. | Branch/deploy policy approved; remote settings still need owner/admin activation. | PARTIALLY COMPLETE LOCALLY: workflows and local equivalents pass; final completion requires feature-branch push, remote run evidence, and active repository/environment protections. | Gate C |
+| PLU-04 | GitHub Actions CI/CD and security gates. | PLU-01 and PLU-03 local config baseline. | CI workflows, test scripts, migration checks, dependency/security/secret scans, smoke scripts, runtime/dependency split. | Branch/deploy policy approved; remote settings still need owner/admin activation. | PARTIALLY COMPLETE: feature-branch CI passes; final completion requires PR dependency-review evidence and active repository/environment protections. | Gate C |
 | PLU-05 | Observability and operational alerts. | PLU-01, PLU-03, and PLU-04 local CI scaffolding. | Logging/error config, readiness monitors, alert docs, Render scheduled cleanup job/runbook. | Tooling may be selected/configured to satisfy approved architecture. | Logs/errors/uptime/readiness/DB/Auth0/usage alerts active; daily usage cleanup scheduled or runbooked. | Gate C |
 | PLU-06 | Backup/restore, rollback, security headers, privacy controls. | PLU-01 and PLU-03. | Runbooks, deployment config, frontend/backend headers, privacy docs. | Backup/privacy/security policies approved. | Backup retention, restore proof, rollback proof, CSP/security headers, privacy launch controls complete. | Gate D |
 | PLU-07 | Persistence integrity and production-like staging launch rehearsal. | PLU-02 through PLU-06. | `database_repository.py`, backend tests, staging smoke/E2E docs/scripts. | GO owner. | Missing POI stops cannot be silently dropped; staging rehearsal passes all GO/NO-GO checks. | Gate D/E |
@@ -581,14 +581,13 @@ Remain in PLU-04 closeout.
 
 Why next:
 
-- PLU-04 is locally hardened but not code+remote closed.
-- The feature branch still needs to be pushed and observed in GitHub Actions.
+- PLU-04 is branch-CI validated but not PR/settings closed.
+- Dependency review still needs pull request context.
 - Branch/environment/security settings still need owner/admin activation before PLU-04 can be complete.
 
 Prerequisites:
 
-- Push the PLU-04 feature branch and observe GitHub Actions.
-- Open a PR if tooling/credentials allow so dependency review can run in pull request context.
+- Open a PR for `plu-04-github-actions-cicd` so dependency review can run in pull request context.
 - Do not merge, deploy production, force-push, or add cloud secrets during PLU-04 closeout.
 
 Why competing tasks come later:

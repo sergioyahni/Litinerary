@@ -4,11 +4,11 @@ Date: 2026-08-21
 
 Repository: `C:\Users\syahn\source\litinerary`
 
-PLU-04 STATUS: PARTIAL - LOCAL HARDENING COMPLETE, REMOTE EVIDENCE PENDING
+PLU-04 STATUS: PARTIAL - CODE AND BRANCH CI COMPLETE, OWNER SETTINGS / PR CONTEXT PENDING
 
 ## 1. Verdict
 
-PLU-04 is locally hardened and ready for remote validation, but it is not fully complete until the feature branch is pushed, GitHub Actions run on GitHub, and owner/admin repository settings are enabled and verified.
+PLU-04 code is implemented, committed, pushed to a feature branch, and validated by a real GitHub Actions branch run. It is still not fully complete because GitHub owner/admin protections and pull-request-only dependency review evidence remain pending.
 
 ## 2. Previous Report Corrections
 
@@ -46,6 +46,7 @@ PLU-04 adds or updates:
 - `backend/requirements-runtime.txt`
 - `backend/requirements-ci.txt`
 - `backend/runtime.txt`
+- `backend/tests/test_live_llm_preflight.py`
 - `frontend/.nvmrc`
 - `frontend/package.json`
 - `frontend/package-lock.json`
@@ -53,6 +54,11 @@ PLU-04 adds or updates:
 - `docs/plu-04-github-actions-cicd-report.md`
 - `docs/production-development-progress.md`
 - `docs/production-launch-plan.md`
+
+Commits pushed to `origin/plu-04-github-actions-cicd`:
+
+- `77e859c92064582b05f8b7af5a3ec8906ed6a64c` - `Add PLU-04 GitHub Actions CI/CD gates`
+- `c0fed4fd63b26c24b4d38e15e615af31f90d221a` - `Fix PowerShell preflight tests on CI runners`
 
 ## 4. Workflow Security Audit
 
@@ -182,37 +188,53 @@ Passed on 2026-08-21:
 - `venv\Scripts\python.exe -m pip_audit -r backend\requirements-runtime.txt --strict`
 - `venv\Scripts\python.exe -m pip_audit -r backend\requirements-ci.txt --strict`
 - `venv\Scripts\python.exe -m pytest -q --basetemp=tests\.artifacts\tmp\pytest-plu-04-closeout-backend`: 351 passed, 3 skipped.
+- `venv\Scripts\python.exe -m pytest backend\tests\test_live_llm_preflight.py -q --basetemp=tests\.artifacts\tmp\pytest-plu-04-live-llm-preflight`: 5 passed.
+- `venv\Scripts\python.exe -m pytest -q --basetemp=tests\.artifacts\tmp\pytest-plu-04-closeout-backend-after-ci-fix`: 351 passed, 3 skipped.
+- Fresh local CI-repro venv using `backend/requirements-ci.txt`: 351 passed, 3 skipped.
 - `powershell.exe -ExecutionPolicy Bypass -File scripts\cloud_offline_render_preflight.ps1`
 - `git diff --check`: no whitespace errors; line-ending warnings only.
 
 ## 10. Git / Remote State
 
-At closeout before commit/push:
+At closeout after push:
 
-- Local branch: `main`
-- Local HEAD: `8263cf1bca8a3125a039bb0388325b03cd4ec9ee`
+- Local branch: `plu-04-github-actions-cicd`
+- Local HEAD / remote branch HEAD: `c0fed4fd63b26c24b4d38e15e615af31f90d221a`
 - Remote `origin/main`: `86a40dc90ff7dcfd4497ef1da190dc2da35e73ca`
-- Local branch has two prior commits not on remote before PLU-04.
-- PLU-04 work is intended for a feature branch, not direct `main` push.
+- The feature branch contains the two prior local commits plus the PLU-04 commits.
+- `main` was not pushed.
 
-Required Git closeout action:
+Remote branch:
 
-- Create a feature branch such as `plu-04-github-actions-cicd`.
-- Commit only PLU-04 files.
-- Push only the feature branch.
-- Do not merge to `main`.
-- Do not force-push.
-- Do not push production deployment changes directly to `main`.
+- `origin/plu-04-github-actions-cicd`
+- PR URL offered by GitHub: `https://github.com/sergioyahni/Litinerary/pull/new/plu-04-github-actions-cicd`
 
 ## 11. GitHub Actions Results
 
-Remote GitHub Actions results are pending.
+Remote GitHub Actions results:
 
-Expected after feature-branch push:
+- First branch run: `32502699119`, commit `77e859c92064582b05f8b7af5a3ec8906ed6a64c`, conclusion `failure`.
+  - Failed job: `Backend pytest`.
+  - API log download was blocked with `403 Must have admin rights to Repository`; check-run annotations only exposed `Process completed with exit code 1`.
+  - Likely cause was a Windows-only `powershell.exe` assumption in `backend/tests/test_live_llm_preflight.py`.
+- Follow-up fix: `c0fed4fd63b26c24b4d38e15e615af31f90d221a` made PowerShell test helpers use `powershell.exe` on Windows and `pwsh` on non-Windows runners.
+- Second branch run: `32504034854`, commit `c0fed4fd63b26c24b4d38e15e615af31f90d221a`, conclusion `success`.
+- Successful run URL: `https://github.com/sergioyahni/Litinerary/actions/runs/32504034854`
 
-- CI should trigger for `plu-04-*` branch pushes.
-- Deployment workflows should not deploy from the feature branch because staging `workflow_run` is restricted to `main`, and production is manual dispatch only.
-- GitHub Dependency Review will run only in pull request context.
+Successful jobs:
+
+- `Workflow policy`
+- `Secret hygiene`
+- `Backend pytest`
+- `Migration and seed`
+- `Config profile validation`
+- `Render offline preflight`
+- `Frontend typecheck, tests, build`
+- `Dependency security`
+
+Skipped as expected on branch push:
+
+- `GitHub dependency review`, because it is intentionally gated to `pull_request` events.
 
 ## 12. GitHub Owner Actions
 
@@ -242,7 +264,7 @@ Production remains NO-GO.
 
 Open blockers:
 
-- PLU-04 remote workflow execution and GitHub protections are not yet proven.
+- PLU-04 branch CI is proven green, but PR dependency review and GitHub branch/environment/security protections are not yet proven.
 - Real Auth0 staging/production resources are still unprovisioned.
 - Real Render backend/frontend/PostgreSQL resources are still unprovisioned.
 - Managed DB backup/restore/rollback evidence is missing.
@@ -253,4 +275,4 @@ Open blockers:
 
 ## 14. Next Recommended Unit
 
-Remain in PLU-04 closeout until the feature branch is pushed, GitHub Actions results are observed, and the owner/admin repository settings are verified.
+Remain in PLU-04 closeout until a PR is opened, dependency review runs in PR context, and the owner/admin repository settings are verified.
