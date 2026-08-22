@@ -30,6 +30,7 @@ describe("requestJson", () => {
         ok: false,
         status: 404,
         statusText: "Not Found",
+        headers: new Headers(),
         json: vi.fn().mockResolvedValue({ detail: "Unknown destination: atlantis" }),
       }),
     );
@@ -69,5 +70,26 @@ describe("requestJson", () => {
     expect(unauthorized.isForbidden).toBe(false);
     expect(forbidden.isUnauthorized).toBe(false);
     expect(forbidden.isForbidden).toBe(true);
+  });
+
+  it("marks rate-limited errors and preserves Retry-After seconds", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: new Headers({ "Retry-After": "42" }),
+        json: vi.fn().mockResolvedValue({
+          detail: { message: "Daily itinerary generation limit exceeded." },
+        }),
+      }),
+    );
+
+    await expect(requestJson("/api/itinerary/generate")).rejects.toMatchObject({
+      status: 429,
+      isRateLimited: true,
+      retryAfterSeconds: 42,
+    } satisfies Partial<ApiError>);
   });
 });

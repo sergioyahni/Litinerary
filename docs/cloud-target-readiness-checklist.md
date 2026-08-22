@@ -46,7 +46,7 @@ target. Do not store real secrets in this file.
 
 - [ ] `APP_ENV`:
 - [ ] `ENABLE_REAL_LLM=false`
-- [ ] `ALLOW_EXTERNAL_CALLS=false`
+- [ ] `ALLOW_EXTERNAL_CALLS=false` for `APP_ENV=development` offline rehearsal, or `true` only for managed-auth JWKS/provider metadata in `internal`/`beta`/`staging`/`production`.
 - [ ] `ENABLE_STAGED_INTERNAL_LLM_TESTING=false`
 - [ ] `ENABLE_INTERNAL_ACCESS_GATE=false`
 - [ ] `ENABLE_MOCK_SERVICES=true`
@@ -60,6 +60,12 @@ target. Do not store real secrets in this file.
 - [ ] `AFFILIATE_PROVIDER=mock`
 - [ ] `TTS_PROVIDER=mock`
 - [ ] `PROVIDER_DAILY_COST_CEILING_USD=0`
+- [ ] `ENABLE_AUTH=false` and `AUTH_PROVIDER=dev` only for `APP_ENV=development` offline rehearsal.
+- [ ] `ENABLE_AUTH=true` for `internal`/`beta`/`staging`/`production`.
+- [ ] `AUTH_PROVIDER` is a managed provider label, not `dev`, for deployed profiles.
+- [ ] `AUTH_REQUIRED_FOR_USER_FEATURES=true` for deployed profiles.
+- [ ] `AUTH_ALLOW_DEV_USER_FALLBACK=false` for deployed profiles.
+- [ ] `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, and `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL` configured for deployed profiles.
 - [ ] No `LLM_API_KEY` configured.
 - [ ] No real provider credentials configured.
 
@@ -77,8 +83,9 @@ target. Do not store real secrets in this file.
 - [ ] Readiness endpoint URL:
 - [ ] Health expected result: `status=ok`
 - [ ] Readiness expected result: `status=ready`
-- [ ] Readiness must show external calls disabled:
-- [ ] Readiness must show all providers mock/offline:
+- [ ] Readiness must show external calls disabled for local offline development rehearsals, or enabled only for deployed managed auth:
+- [ ] Readiness must show product providers mock/offline:
+- [ ] Readiness must show deployed auth provider configured for deployed profiles:
 
 ## Domain And CORS
 
@@ -111,7 +118,7 @@ target. Do not store real secrets in this file.
 
 | Provider type | Expected provider | Expected mode | Real enabled | External calls allowed |
 | --- | --- | --- | --- | --- |
-| auth | dev/mock or approved offline auth | mock | false | false |
+| auth | dev/mock for development; managed auth for deployed profiles | mock or real managed auth | false for development; true for deployed | false for development; true for deployed |
 | llm | fake | mock | false | false |
 | vector_db | fake | mock | false | false |
 | poi_verification | mock | mock | false | false |
@@ -133,4 +140,3 @@ target. Do not store real secrets in this file.
 - [ ] Target ready for mock-only cloud offline rehearsal.
 - [ ] Target blocked; blockers listed:
 - [ ] User approval recorded before execution:
-

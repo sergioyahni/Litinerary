@@ -233,7 +233,7 @@ Use `docs/cloud-offline-env-render.template.md` as the source posture.
 Required offline values:
 
 ```text
-APP_ENV=<non-production-offline-env>
+APP_ENV=development
 ENABLE_REAL_LLM=false
 ALLOW_EXTERNAL_CALLS=false
 ENABLE_STAGED_INTERNAL_LLM_TESTING=false
@@ -255,6 +255,11 @@ ENABLE_AUTH=false
 AUTH_PROVIDER=dev
 AUTH_ALLOW_DEV_USER_FALLBACK=false
 ```
+
+This offline example uses `APP_ENV=development` because deployed environment
+names now fail startup unless managed JWT auth is configured. Use placeholder
+managed-auth deployment config for any `internal`, `beta`, `staging`, or
+`production` rehearsal.
 
 Database and URL values must be placeholders in docs and real values only in
 Render config:
@@ -407,4 +412,3 @@ provider.
 - Render static sites: https://render.com/docs/static-sites
 - Render PostgreSQL connections: https://render.com/docs/postgresql-creating-connecting
 - Render deploy rollbacks: https://render.com/docs/deploy-rollbacks
-

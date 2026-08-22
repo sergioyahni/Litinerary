@@ -1,9 +1,11 @@
+from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
 from app.services.seed import seed_database
 
 
 def main() -> None:
-    init_db()
+    if not get_settings().is_deployed_environment:
+        init_db()
     with SessionLocal() as db:
         counts = seed_database(db)
 

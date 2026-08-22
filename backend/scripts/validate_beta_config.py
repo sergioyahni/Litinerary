@@ -33,12 +33,17 @@ def main() -> int:
             errors.append("CORS_ALLOWED_ORIGINS must not contain wildcard origins.")
         if settings.auth_allow_dev_user_fallback:
             errors.append("AUTH_ALLOW_DEV_USER_FALLBACK must be false for deployed profiles.")
+        errors.extend(settings.deployed_auth_validation_errors())
+        errors.extend(settings.database_configuration_validation_errors())
+        errors.extend(settings.usage_control_validation_errors())
 
     if args.profile in {"beta", "staging"}:
         if not settings.enable_mock_services:
             errors.append("Beta/staging dry run expects ENABLE_MOCK_SERVICES=true.")
-        if settings.allow_external_calls:
-            errors.append("Beta/staging dry run expects ALLOW_EXTERNAL_CALLS=false.")
+        if not settings.allow_external_calls:
+            errors.append(
+                "Beta/staging dry run expects ALLOW_EXTERNAL_CALLS=true for managed auth."
+            )
         if any(
             [
                 settings.enable_real_llm,
@@ -65,6 +70,11 @@ def main() -> int:
         "mockServicesEnabled": settings.enable_mock_services,
         "externalCallsAllowed": settings.allow_external_calls,
         "externalCallGuardBlocked": blocked,
+        "database": {
+            "configured": settings.database_url_configured,
+            "dialect": settings.safe_database_dialect(),
+            "configurationErrors": settings.database_configuration_validation_errors(),
+        },
         "corsOriginCount": len(settings.cors_allowed_origins),
         "providers": provider_status(settings),
         "startupValidationNotes": settings.startup_validation_notes(),
@@ -80,8 +90,9 @@ def _external_call_blocked(settings) -> bool:
             provider_name="dry_run_provider",
             provider_type=ProviderType.LLM,
             feature_flag_name="ENABLE_REAL_LLM",
-            feature_enabled=True,
+            feature_enabled=settings.enable_real_llm,
             required_config={"DRY_RUN_API_KEY": "placeholder"},
+            allowed_environments=settings.llm_allowed_environments,
             settings=settings,
         )
     except ProviderError as exc:

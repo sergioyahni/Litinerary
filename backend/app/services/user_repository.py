@@ -24,7 +24,8 @@ from app.schemas.users import (
     UserReview,
     UserReviewCreateRequest,
 )
-from app.services.database_repository import get_itinerary, itinerary_from_model
+from app.services import database_repository
+from app.services.database_repository import itinerary_from_model
 from app.services.mock_ai_service import get_ai_pipeline
 from app.services.vector_service import (
     find_itineraries_similar_to_user_positive_reviews,
@@ -124,9 +125,19 @@ def upsert_preference(
     return response
 
 
-def bookmark_itinerary(db: Session, user_id: str, itinerary_id: str) -> UserBookmarksResponse:
+def bookmark_itinerary(
+    db: Session,
+    user_id: str,
+    itinerary_id: str,
+    *,
+    current_user: CurrentUser | None = None,
+) -> UserBookmarksResponse:
     user = _get_user(db, user_id)
-    itinerary = db.get(ItineraryModel, itinerary_id)
+    itinerary = database_repository.get_accessible_itinerary_model(
+        db,
+        itinerary_id,
+        current_user=current_user,
+    )
     if itinerary is None:
         raise not_found("itinerary", itinerary_id)
 
@@ -135,24 +146,36 @@ def bookmark_itinerary(db: Session, user_id: str, itinerary_id: str) -> UserBook
         db.commit()
         db.refresh(user)
 
-    return list_bookmarks(db, user_id)
+    return list_bookmarks(db, user_id, current_user=current_user)
 
 
-def remove_bookmark(db: Session, user_id: str, itinerary_id: str) -> UserBookmarksResponse:
+def remove_bookmark(
+    db: Session,
+    user_id: str,
+    itinerary_id: str,
+    *,
+    current_user: CurrentUser | None = None,
+) -> UserBookmarksResponse:
     user = _get_user(db, user_id)
     user.bookmarked_itineraries = [
         itinerary for itinerary in user.bookmarked_itineraries if itinerary.id != itinerary_id
     ]
     db.commit()
     db.refresh(user)
-    return list_bookmarks(db, user_id)
+    return list_bookmarks(db, user_id, current_user=current_user)
 
 
-def list_bookmarks(db: Session, user_id: str) -> UserBookmarksResponse:
+def list_bookmarks(
+    db: Session,
+    user_id: str,
+    *,
+    current_user: CurrentUser | None = None,
+) -> UserBookmarksResponse:
     user = _get_user(db, user_id)
     itineraries = [
         itinerary_from_model(row)
         for row in sorted(user.bookmarked_itineraries, key=lambda item: item.title)
+        if database_repository.itinerary_row_is_accessible(row, current_user=current_user)
     ]
     return UserBookmarksResponse(userId=user.id, itineraries=itineraries)
 
@@ -161,9 +184,15 @@ def save_review(
     db: Session,
     user_id: str,
     request: UserReviewCreateRequest,
+    *,
+    current_user: CurrentUser | None = None,
 ) -> UserReview:
     _get_user(db, user_id)
-    itinerary = get_itinerary(db, request.itineraryId)
+    itinerary = database_repository.get_accessible_itinerary(
+        db,
+        request.itineraryId,
+        current_user=current_user,
+    )
     if itinerary is None:
         raise not_found("itinerary", request.itineraryId)
 

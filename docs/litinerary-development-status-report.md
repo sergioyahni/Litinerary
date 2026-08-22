@@ -1,5 +1,7 @@
 # Litinerary Development Status Report
 
+Status note added 2026-08-15: this report is historical. For current Stage 1 auth and itinerary ownership status, use `docs/production-development-progress.md`, `docs/stage-1-s1-02-managed-auth-report.md`, and `docs/stage-1-s1-03-itinerary-ownership-report.md`.
+
 ## 1. Executive Summary
 
 Litinerary is a functional mock/offline MVP with a Vue 3 frontend, FastAPI backend, SQLite/Postgres-compatible SQLAlchemy persistence, Alembic migrations, a local seed workflow, broad offline tests, and provider-neutral adapter boundaries. The current reliable evidence supports local mock development, local mock demo, and a completed mock-only Render cloud offline rehearsal. It does not support beta or production with real users or live providers.
@@ -12,7 +14,7 @@ Readiness conclusions:
 | Local demo readiness | Ready | Local mock/offline rehearsal passed health, readiness, seed reset/validate, mock generation, and shutdown without live providers. Evidence: `docs/local-offline-deployment-rehearsal-record.md` lines 3-58. |
 | Cloud offline rehearsal readiness | Ready with conditions | Render mock-only rehearsal passed backend/frontend deploy, CORS fix, Postgres migration/seed/validation, mock itinerary smoke, log hygiene, and shutdown. It left the Render Postgres DB in place and recorded npm audit vulnerabilities. Evidence: `docs/cloud-offline-rehearsal-record-render.md` lines 230-425. |
 | Beta readiness | Partially ready | Conditional only for a private, protected, mock-only beta after target-specific beta dry-run and config checks. External beta users or live LLM beta remain blocked. Evidence: `docs/beta-go-no-go-report.md` lines 9-13, 130-148, 172-178; `docs/internal-staged-testing-readiness-report.md` lines 18-24, 190-202. |
-| Production readiness | Not ready | Production blockers remain: managed auth provider selection/staging, durable rate/cost controls, live provider gates, observability retention/alerting, deployment/backup/runbooks, dependency scanning, and full ownership enforcement. Evidence: `docs/production-readiness.md` lines 57-70, 72-96, 107-123, 146-151, 199-210; `.env.production.example` lines 1-3. |
+| Production readiness | Not ready | Production blockers remain: managed auth provider selection/staging, durable rate/cost controls, live provider gates, observability retention/alerting, deployment/backup/runbooks, dependency scanning, and future private itinerary CRUD/sharing policy. Evidence: `docs/production-readiness.md`; `.env.production.example` lines 1-3. |
 
 ## 2. Sources Reviewed
 
@@ -94,7 +96,7 @@ Backend pytest, frontend Vitest, smoke, negative-path/security, provider contrac
 | Real ticketing | Intentionally deferred / not implemented | Provider selection, legal/product review, stale inventory policy, terms, rate limits, monitoring | `docs/provider-adapters.md` lines 290-315 |
 | Real affiliate/e-commerce/payment | Intentionally deferred / not implemented | Commerce/legal/security review, disclosure, provider selection; no payment before separate gate | `docs/provider-adapters.md` lines 317-339 |
 | Real TTS/audio storage | Intentionally deferred / not implemented | Voice licensing, retention/deletion, storage/CDN policy, accessibility fallback | `docs/provider-adapters.md` lines 341-362 |
-| Production deployment | Blocked | Auth, ownership hardening, durable limits, observability retention, deployment readiness checks, backups/rollback | `docs/production-readiness.md` lines 199-210 |
+| Production deployment | Blocked | Auth provider staging, future private CRUD/sharing policy, durable limits, observability retention, deployment readiness checks, backups/rollback | `docs/production-readiness.md` |
 | Staged log sink review | Planned but not executed | Actual staged log sink and retention review | `docs/staged-log-sink-redaction-review-plan.md` lines 3-32; `docs/internal-staged-testing-readiness-report.md` lines 72-74 |
 | Rollback drill for staged live LLM | Attempted/incomplete | Completed drill capturing live-configured readiness before rollback | `docs/integration-test-matrix.md` lines 26-28; `docs/internal-staged-testing-readiness-report.md` lines 83-85, 180-182 |
 
@@ -174,7 +176,7 @@ Readiness rating: Not ready.
 
 Completed prerequisites: foundational code and contracts, restrictive production template, production readiness checklist.
 
-Missing prerequisites: managed auth, full ownership enforcement, durable rate/cost controls, live provider gates and terms reviews, production secret management, observability backend, dashboards, alerts, log retention, backups, rollback drills, dependency/security scanning, migration-state readiness. Evidence: `docs/production-readiness.md` lines 21-40, 42-55, 57-70, 72-123, 133-151, 153-178, 199-210.
+Missing prerequisites: managed auth provider staging, future private itinerary CRUD/sharing policy, durable rate/cost controls, live provider gates and terms reviews, production secret management, observability backend, dashboards, alerts, log retention, backups, rollback drills, dependency/security scanning, migration-state readiness. Evidence: `docs/production-readiness.md`.
 
 Blockers: production template explicitly says not ready for launch until auth, durable rate limits, observability retention, and provider gates pass. Evidence: `.env.production.example` lines 1-3.
 
@@ -320,4 +322,4 @@ Ambiguities and quality gaps:
 | Local demo | GO | Mock/offline local rehearsal passed and no live-provider dependency is required. Evidence: `docs/local-offline-deployment-rehearsal-record.md` lines 3-58. |
 | Render cloud offline rehearsal | GO | Render mock-only rehearsal completed with backend/frontend deploy, Postgres migration/seed, mock itinerary, log hygiene, and shutdown. Conditions: refresh for current commit and address npm audit findings before broader exposure. Evidence: `docs/cloud-offline-rehearsal-record-render.md` lines 230-425. |
 | Beta deployment | CONDITIONAL GO | Only for protected, mock-only private beta after target beta dry-run, exact CORS/API config, non-production DB, disabled admin/debug/external calls, and vulnerability review. No-go for public/beta live LLM. Evidence: `docs/beta-go-no-go-report.md` lines 130-148, 172-178; `docs/internal-staged-testing-readiness-report.md` lines 190-202. |
-| Production deployment | NO-GO | Production auth, durable limits/cost controls, ownership hardening, live provider gates, observability, backups/rollback, security scanning, and release evidence are incomplete. Evidence: `.env.production.example` lines 1-3; `docs/production-readiness.md` lines 199-210. |
+| Production deployment | NO-GO | Production auth provider staging, durable limits/cost controls, future private CRUD/sharing policy, live provider gates, observability, backups/rollback, security scanning, and release evidence are incomplete. Evidence: `.env.production.example` lines 1-3; `docs/production-readiness.md`. |

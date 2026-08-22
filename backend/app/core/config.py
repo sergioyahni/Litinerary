@@ -3,6 +3,9 @@ from pathlib import Path
 from pydantic import BaseModel
 import os
 
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+
 
 LOCAL_CORS_ORIGINS = [
     "http://localhost:5173",
@@ -44,6 +47,7 @@ class Settings(BaseModel):
     auth_allow_dev_user_fallback: bool = True
     cors_allowed_origins: list[str] = LOCAL_CORS_ORIGINS
     database_url: str = "sqlite:///./litinerary.db"
+    database_url_configured: bool = False
     ai_provider: str = "fake"
     llm_provider: str = "fake"
     llm_api_key: str | None = None
@@ -101,10 +105,16 @@ class Settings(BaseModel):
     anonymous_itinerary_generations_per_day: int = 100
     registered_user_itinerary_generations_per_day: int = 250
     subscriber_chat_messages_per_day: int = 250
+    anonymous_itinerary_generations_per_minute: int = 10
+    registered_user_itinerary_generations_per_minute: int = 30
+    subscriber_chat_messages_per_minute: int = 60
     vector_search_max_results: int = 20
     poi_verification_max_batch_size: int = 25
     ticketing_lookup_max_requests_per_itinerary: int = 10
+    enable_durable_usage_controls: bool = False
+    provider_daily_request_ceiling: int = 1000
     provider_daily_cost_ceiling_usd: float = 0.0
+    usage_counter_retention_days: int = 90
     itinerary_generation_max_days: int = 7
 
     @property
@@ -127,6 +137,48 @@ class Settings(BaseModel):
     def is_standard_test_mode(self) -> bool:
         return self.app_env == "test" and not self.enable_integration_tests
 
+    def deployed_auth_validation_errors(self) -> list[str]:
+        if not self.is_deployed_environment:
+            return []
+
+        errors: list[str] = []
+        if not self.enable_auth:
+            errors.append("ENABLE_AUTH=true is required in deployed environments.")
+        if not self.auth_required_for_user_features:
+            errors.append(
+                "AUTH_REQUIRED_FOR_USER_FEATURES=true is required in deployed environments."
+            )
+        if self.auth_allow_dev_user_fallback:
+            errors.append("AUTH_ALLOW_DEV_USER_FALLBACK=false is required in deployed environments.")
+        if not self.auth_provider or self.auth_provider == "dev":
+            errors.append("AUTH_PROVIDER must identify a managed provider and must not be dev.")
+        if not self.auth_jwt_issuer:
+            errors.append("AUTH_JWT_ISSUER is required in deployed environments.")
+        if not self.auth_jwt_audience:
+            errors.append("AUTH_JWT_AUDIENCE is required in deployed environments.")
+        if (
+            not self.auth_jwt_algorithms
+            or "dev" in self.auth_jwt_algorithms
+            or "none" in [algorithm.lower() for algorithm in self.auth_jwt_algorithms]
+        ):
+            errors.append(
+                "AUTH_JWT_ALGORITHMS must contain production JWT algorithms, not dev or none."
+            )
+        if not self.auth_jwks_url and not self.auth_provider_metadata_url:
+            errors.append(
+                "AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL is required in deployed environments."
+            )
+        if not self.allow_external_calls:
+            errors.append(
+                "ALLOW_EXTERNAL_CALLS=true is required so managed-auth JWKS/provider metadata "
+                "can be validated."
+            )
+        if self.app_env not in self.external_call_allowed_environments:
+            errors.append(
+                f"EXTERNAL_CALL_ALLOWED_ENVIRONMENTS must include {self.app_env} for managed auth."
+            )
+        return errors
+
     def startup_validation_notes(self) -> list[str]:
         notes: list[str] = []
         provider_credentials = [
@@ -145,18 +197,8 @@ class Settings(BaseModel):
                 )
         if self.is_production and "*" in self.cors_allowed_origins:
             notes.append("Wildcard CORS origin ignored in production.")
-        if self.enable_auth and self.is_production:
-            if not self.auth_jwt_issuer:
-                notes.append("AUTH_JWT_ISSUER is required when production auth is enabled.")
-            if not self.auth_jwt_audience:
-                notes.append("AUTH_JWT_AUDIENCE is required when production auth is enabled.")
-            if not self.auth_jwks_url and not self.auth_provider_metadata_url:
-                notes.append(
-                    "AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL is required when "
-                    "production auth is enabled."
-                )
-            if self.auth_provider == "dev":
-                notes.append("AUTH_PROVIDER=dev is not a production authentication provider.")
+        notes.extend(self.deployed_auth_validation_errors())
+        notes.extend(self.database_configuration_validation_errors())
         if self.enable_auth and self.auth_provider != "dev" and not self.allow_external_calls:
             notes.append(
                 "Managed auth provider validation is configured, but "
@@ -242,6 +284,7 @@ class Settings(BaseModel):
                 notes.append("LLM_ERROR_RATE_ALERT_THRESHOLD_PERCENT must be between 0 and 100.")
         if self.itinerary_generation_max_days <= 0:
             notes.append("ITINERARY_GENERATION_MAX_DAYS must be positive.")
+        notes.extend(self.usage_control_validation_errors())
         if self.enable_real_vector_db and self.vector_db_provider == "qdrant":
             if not self.qdrant_url:
                 notes.append("QDRANT_URL is required when ENABLE_REAL_VECTOR_DB=true.")
@@ -317,6 +360,56 @@ class Settings(BaseModel):
                 notes.append("AFFILIATE_TIMEOUT_SECONDS must be positive.")
         return notes
 
+    def usage_control_validation_errors(self) -> list[str]:
+        errors: list[str] = []
+        positive_limits = [
+            ("ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY", self.anonymous_itinerary_generations_per_day),
+            ("REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY", self.registered_user_itinerary_generations_per_day),
+            ("SUBSCRIBER_CHAT_MESSAGES_PER_DAY", self.subscriber_chat_messages_per_day),
+            ("ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE", self.anonymous_itinerary_generations_per_minute),
+            ("REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE", self.registered_user_itinerary_generations_per_minute),
+            ("SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE", self.subscriber_chat_messages_per_minute),
+            ("PROVIDER_DAILY_REQUEST_CEILING", self.provider_daily_request_ceiling),
+            ("USAGE_COUNTER_RETENTION_DAYS", self.usage_counter_retention_days),
+        ]
+        for name, value in positive_limits:
+            if value <= 0:
+                errors.append(f"{name} must be positive.")
+        if self.provider_daily_cost_ceiling_usd < 0:
+            errors.append("PROVIDER_DAILY_COST_CEILING_USD cannot be negative.")
+        if self.is_deployed_environment and not self.enable_durable_usage_controls:
+            errors.append(
+                "ENABLE_DURABLE_USAGE_CONTROLS=true is required in deployed environments."
+            )
+        return errors
+
+    def database_configuration_validation_errors(self) -> list[str]:
+        errors: list[str] = []
+        try:
+            parsed = make_url(self.database_url)
+        except (ArgumentError, ValueError):
+            return ["LITINERARY_DATABASE_URL is malformed or unsupported."]
+
+        if not parsed.drivername:
+            errors.append("LITINERARY_DATABASE_URL is malformed or unsupported.")
+
+        if self.is_deployed_environment and not self.database_url_configured:
+            errors.append("LITINERARY_DATABASE_URL is required in deployed environments.")
+
+        if self.is_deployed_environment and self.database_url == "sqlite:///./litinerary.db":
+            errors.append(
+                "LITINERARY_DATABASE_URL must not use the default local SQLite fallback "
+                "in deployed environments."
+            )
+
+        return errors
+
+    def safe_database_dialect(self) -> str:
+        try:
+            return make_url(self.database_url).drivername
+        except (ArgumentError, ValueError):
+            return "invalid"
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -335,6 +428,9 @@ def get_settings() -> Settings:
         "LITINERARY_POI_VERIFICATION_PROVIDER",
         os.getenv("POI_PROVIDER", os.getenv("POI_VERIFICATION_PROVIDER", "mock")),
     )
+
+    raw_database_url = os.getenv("LITINERARY_DATABASE_URL")
+    database_url_configured = raw_database_url is not None and bool(raw_database_url.strip())
 
     return Settings(
         app_env=app_env,
@@ -381,7 +477,8 @@ def get_settings() -> Settings:
         ),
         auth_allow_dev_user_fallback=_env_bool("AUTH_ALLOW_DEV_USER_FALLBACK", default_enabled),
         cors_allowed_origins=cors_allowed_origins,
-        database_url=os.getenv("LITINERARY_DATABASE_URL", "sqlite:///./litinerary.db"),
+        database_url=raw_database_url.strip() if database_url_configured else "sqlite:///./litinerary.db",
+        database_url_configured=database_url_configured,
         ai_provider=ai_provider,
         llm_provider=os.getenv("LLM_PROVIDER", ai_provider),
         llm_api_key=os.getenv("LLM_API_KEY"),
@@ -470,6 +567,15 @@ def get_settings() -> Settings:
         subscriber_chat_messages_per_day=int(
             os.getenv("SUBSCRIBER_CHAT_MESSAGES_PER_DAY", "250")
         ),
+        anonymous_itinerary_generations_per_minute=int(
+            os.getenv("ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE", "10")
+        ),
+        registered_user_itinerary_generations_per_minute=int(
+            os.getenv("REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE", "30")
+        ),
+        subscriber_chat_messages_per_minute=int(
+            os.getenv("SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE", "60")
+        ),
         vector_search_max_results=int(os.getenv("VECTOR_SEARCH_MAX_RESULTS", "20")),
         poi_verification_max_batch_size=int(
             os.getenv("POI_VERIFICATION_MAX_BATCH_SIZE", "25")
@@ -477,9 +583,12 @@ def get_settings() -> Settings:
         ticketing_lookup_max_requests_per_itinerary=int(
             os.getenv("TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY", "10")
         ),
+        enable_durable_usage_controls=_env_bool("ENABLE_DURABLE_USAGE_CONTROLS", False),
+        provider_daily_request_ceiling=int(os.getenv("PROVIDER_DAILY_REQUEST_CEILING", "1000")),
         provider_daily_cost_ceiling_usd=float(
             os.getenv("PROVIDER_DAILY_COST_CEILING_USD", "0")
         ),
+        usage_counter_retention_days=int(os.getenv("USAGE_COUNTER_RETENTION_DAYS", "90")),
         itinerary_generation_max_days=int(os.getenv("ITINERARY_GENERATION_MAX_DAYS", "7")),
     )
 

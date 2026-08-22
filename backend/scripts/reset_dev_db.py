@@ -1,8 +1,11 @@
+from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
 from app.services.seed_manager import reset_dev_data
 
 
 def main() -> None:
+    if get_settings().is_deployed_environment:
+        raise SystemExit("reset_dev_db is not allowed in deployed environments.")
     init_db()
     with SessionLocal() as db:
         result = reset_dev_data(db)

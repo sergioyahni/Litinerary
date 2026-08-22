@@ -8,6 +8,7 @@ from app.core.auth import (
     optional_current_user,
     require_current_user,
     require_user_feature_access,
+    user_features_require_auth,
 )
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
@@ -54,7 +55,7 @@ def post_user(
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> UserProfile:
-    if settings.auth_required_for_user_features:
+    if user_features_require_auth(settings):
         if current_user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -93,39 +94,39 @@ def post_user_preference(
 def post_user_bookmark(
     user_id: str,
     itinerary_id: str,
-    _: CurrentUser | None = Depends(require_user_feature_access),
+    current_user: CurrentUser | None = Depends(require_user_feature_access),
     db: Session = Depends(get_db),
 ) -> UserBookmarksResponse:
-    return bookmark_itinerary(db, user_id, itinerary_id)
+    return bookmark_itinerary(db, user_id, itinerary_id, current_user=current_user)
 
 
 @router.delete("/{user_id}/bookmarks/{itinerary_id}", response_model=UserBookmarksResponse)
 def delete_user_bookmark(
     user_id: str,
     itinerary_id: str,
-    _: CurrentUser | None = Depends(require_user_feature_access),
+    current_user: CurrentUser | None = Depends(require_user_feature_access),
     db: Session = Depends(get_db),
 ) -> UserBookmarksResponse:
-    return remove_bookmark(db, user_id, itinerary_id)
+    return remove_bookmark(db, user_id, itinerary_id, current_user=current_user)
 
 
 @router.get("/{user_id}/bookmarks", response_model=UserBookmarksResponse)
 def get_user_bookmarks(
     user_id: str,
-    _: CurrentUser | None = Depends(require_user_feature_access),
+    current_user: CurrentUser | None = Depends(require_user_feature_access),
     db: Session = Depends(get_db),
 ) -> UserBookmarksResponse:
-    return list_bookmarks(db, user_id)
+    return list_bookmarks(db, user_id, current_user=current_user)
 
 
 @router.post("/{user_id}/reviews", response_model=UserReview, status_code=201)
 def post_user_review(
     user_id: str,
     request: UserReviewCreateRequest,
-    _: CurrentUser | None = Depends(require_user_feature_access),
+    current_user: CurrentUser | None = Depends(require_user_feature_access),
     db: Session = Depends(get_db),
 ) -> UserReview:
-    return save_review(db, user_id, request)
+    return save_review(db, user_id, request, current_user=current_user)
 
 
 @router.get("/{user_id}/reviews", response_model=list[UserReview])
