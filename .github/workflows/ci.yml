@@ -70,7 +70,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements-ci.txt
+          python -m pip install -r backend/requirements-ci.txt -c backend/constraints-runtime.txt
       - name: Run backend tests
         run: python -m pytest -q --basetemp=tests/.artifacts/tmp/pytest-ci-${{ github.run_id }}-backend
 
@@ -90,7 +90,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements-ci.txt
+          python -m pip install -r backend/requirements-ci.txt -c backend/constraints-runtime.txt
       - name: Run disposable migration and seed check
         run: python scripts/ci/migration_seed_check.py
 
@@ -110,7 +110,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements-ci.txt
+          python -m pip install -r backend/requirements-ci.txt -c backend/constraints-runtime.txt
       - name: Validate safe config profiles
         working-directory: backend
         run: PYTHONPATH=. python ../scripts/ci/validate_config_profiles.py
@@ -193,7 +193,7 @@ jobs:
         run: python -m pip install pip-audit==2.10.1
       - name: Audit Python requirements
         run: |
-          python -m pip_audit -r backend/requirements-runtime.txt --strict
+          python -m pip_audit -r backend/constraints-runtime.txt --strict
           python -m pip_audit -r backend/requirements-ci.txt --strict
 
   dependency-review:

@@ -68,7 +68,7 @@ services:
     runtime: python
     name: litinerary-staging-backend
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt -c constraints-runtime.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     autoDeploy: false
     healthCheckPath: /api/health
@@ -192,7 +192,7 @@ services:
     runtime: python
     name: litinerary-production-backend
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt -c constraints-runtime.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     autoDeploy: false
     healthCheckPath: /api/health

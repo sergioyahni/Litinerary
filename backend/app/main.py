@@ -23,6 +23,7 @@ from app.core.observability import (
     start_timer,
 )
 from app.core.readiness import readiness_payload
+from app.core.release import release_payload
 from app.services.mock_ai_service import validate_llm_startup
 from app.services.poi_verification import validate_poi_provider_startup
 from app.services.routing_service import validate_routing_startup
@@ -119,6 +120,11 @@ def readiness_check(db: Session = Depends(get_db)) -> dict:
         database_status=payload["checks"]["database"]["status"],
     )
     return payload
+
+
+@app.get("/api/version", tags=["health"])
+def version_check() -> dict[str, str]:
+    return release_payload(settings=get_settings())
 
 
 @app.exception_handler(ProviderError)
