@@ -143,7 +143,7 @@ def test_structured_log_redacts_sensitive_fields(caplog) -> None:
 def test_api_exception_produces_correlated_failure_event(caplog, db_session) -> None:
     caplog.set_level(logging.INFO, logger="litinerary")
     path = "/api/test-observability-failure"
-    if not any(route.path == path for route in app.routes):
+    if not any(getattr(route, "path", None) == path for route in app.routes):
 
         @app.get(path)
         def test_observability_failure_route() -> None:
