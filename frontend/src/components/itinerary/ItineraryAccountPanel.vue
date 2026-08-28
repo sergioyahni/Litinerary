@@ -1,10 +1,10 @@
 <template>
   <section class="account-panel" aria-labelledby="account-panel-heading">
     <div>
-      <p class="eyebrow">Development account</p>
+      <p class="eyebrow">{{ authStore.isAuthEnabled ? "Litinerary account" : "Development account" }}</p>
       <h2 id="account-panel-heading">Save this itinerary</h2>
       <p>
-        Phase 2 account features use a temporary development user ID. Anonymous planning still works.
+        Anonymous planning still works. Sign in to save bookmarks and reviews to your account.
       </p>
     </div>
 
@@ -13,6 +13,16 @@
     </div>
 
     <button
+      v-if="authStore.isAuthEnabled && !authStore.isAuthenticated"
+      class="button compact-button"
+      type="button"
+      @click="authStore.login($route.fullPath)"
+    >
+      Sign In
+    </button>
+
+    <button
+      v-else
       class="button compact-button"
       type="button"
       :disabled="userStore.isLoading"
@@ -21,7 +31,7 @@
       {{ userStore.isBookmarked(itinerary.id) ? "Remove Bookmark" : "Bookmark Itinerary" }}
     </button>
 
-    <form class="review-form" @submit.prevent="submitReview">
+    <form v-if="!authStore.isAuthEnabled || authStore.isAuthenticated" class="review-form" @submit.prevent="submitReview">
       <label for="review-rating">Rating</label>
       <select id="review-rating" v-model.number="rating">
         <option :value="5">5 - Excellent</option>
@@ -48,6 +58,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useAuthStore } from "../../stores/authStore";
 import { useUserStore } from "../../stores/userStore";
 import type { Itinerary } from "../../types";
 
@@ -55,12 +66,15 @@ const props = defineProps<{
   itinerary: Itinerary;
 }>();
 
+const authStore = useAuthStore();
 const userStore = useUserStore();
 const rating = ref(5);
 const comment = ref("");
 
 onMounted(() => {
-  void userStore.loadBookmarks();
+  if (!authStore.isAuthEnabled || authStore.isAuthenticated) {
+    void userStore.loadBookmarks();
+  }
 });
 
 async function submitReview(): Promise<void> {

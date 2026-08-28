@@ -2,13 +2,26 @@
   <section class="page-banner">
     <div class="container">
       <h1>Bookmarks</h1>
-      <p>Routes saved by the temporary development user.</p>
+      <p>Routes saved to your Litinerary account.</p>
     </div>
   </section>
 
   <section class="section-margin">
     <div class="container">
-      <div v-if="userStore.isLoading" class="placeholder-panel" aria-live="polite">
+      <div v-if="authStore.isAuthEnabled && !authStore.isAuth0Configured" class="placeholder-panel error-panel">
+        <h2>Authentication is not configured</h2>
+        <p>{{ authStore.error ?? "Auth0 frontend configuration is incomplete." }}</p>
+      </div>
+
+      <div v-else-if="authStore.isAuthEnabled && !authStore.isAuthenticated" class="placeholder-panel">
+        <h2>Sign in to view bookmarks</h2>
+        <p>Saved routes are available after your session is verified.</p>
+        <button class="button compact-button" type="button" @click="authStore.login('/account/bookmarks')">
+          Sign In
+        </button>
+      </div>
+
+      <div v-else-if="userStore.isLoading" class="placeholder-panel" aria-live="polite">
         <p class="loading-note">Loading bookmarks...</p>
       </div>
 
@@ -47,8 +60,10 @@
 
 <script setup lang="ts">
 import { onMounted } from "vue";
+import { useAuthStore } from "../stores/authStore";
 import { useUserStore } from "../stores/userStore";
 
+const authStore = useAuthStore();
 const userStore = useUserStore();
 
 onMounted(() => {

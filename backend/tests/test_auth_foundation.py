@@ -38,10 +38,15 @@ def managed_auth_private_key(monkeypatch):
     return private_key
 
 
-def enable_managed_auth(monkeypatch) -> None:
+def enable_managed_auth(monkeypatch, app_env: str | None = None) -> None:
+    if app_env is not None:
+        monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("ENABLE_AUTH", "true")
     monkeypatch.setenv("ALLOW_EXTERNAL_CALLS", "true")
-    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "development,test")
+    allowed_environments = "development,test"
+    if app_env is not None:
+        allowed_environments = f"{allowed_environments},{app_env}"
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", allowed_environments)
     monkeypatch.setenv("AUTH_REQUIRED_FOR_USER_FEATURES", "true")
     monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
     monkeypatch.setenv("AUTH_PROVIDER", "oidc")
@@ -67,6 +72,24 @@ def make_managed_token(private_key, **overrides) -> str:
     }
     payload.update(overrides)
     return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-key"})
+
+
+def make_unsupported_algorithm_token(**overrides) -> str:
+    now = datetime.now(UTC)
+    payload = {
+        "iss": "https://auth.example.test/",
+        "aud": "litinerary-api",
+        "sub": "auth0|reader",
+        "exp": now + timedelta(minutes=5),
+        "iat": now,
+    }
+    payload.update(overrides)
+    return jwt.encode(
+        payload,
+        "test-secret-with-at-least-thirty-two-bytes",
+        algorithm="HS256",
+        headers={"kid": "test-key"},
+    )
 
 
 def test_anonymous_public_access_still_works_when_auth_enabled(client, monkeypatch) -> None:
@@ -99,6 +122,50 @@ def test_user_endpoint_requires_auth_when_auth_enabled(client, monkeypatch) -> N
     get_settings.cache_clear()
 
     response = client.get("/api/users/dev-reader")
+
+    assert response.status_code == 401
+    assert "Authentication is required" in response.json()["detail"]
+
+
+def test_api_me_requires_auth_when_anonymous(client, monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+    response = client.get("/api/me")
+
+    assert response.status_code == 401
+    assert "Authentication is required" in response.json()["detail"]
+
+
+def test_deployed_user_features_fail_closed_when_auth_flags_are_disabled(
+    client,
+    monkeypatch,
+) -> None:
+    client.post("/api/users", json={"id": "dev-reader"})
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("ENABLE_AUTH", "false")
+    monkeypatch.setenv("AUTH_REQUIRED_FOR_USER_FEATURES", "false")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "true")
+    get_settings.cache_clear()
+
+    response = client.get("/api/users/dev-reader")
+
+    assert response.status_code == 401
+    assert "Authentication is required" in response.json()["detail"]
+
+
+def test_deployed_user_creation_fails_closed_when_auth_flags_are_disabled(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ENABLE_AUTH", "false")
+    monkeypatch.setenv("AUTH_REQUIRED_FOR_USER_FEATURES", "false")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "true")
+    get_settings.cache_clear()
+
+    response = client.post("/api/users", json={"id": "client-controlled-user"})
 
     assert response.status_code == 401
     assert "Authentication is required" in response.json()["detail"]
@@ -195,6 +262,21 @@ def test_development_tokens_are_rejected_in_beta(client, monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_development_tokens_are_rejected_in_production_even_with_managed_config(
+    client,
+    monkeypatch,
+) -> None:
+    enable_managed_auth(monkeypatch, app_env="production")
+
+    response = client.get(
+        "/api/me",
+        headers={"Authorization": "Bearer dev:dev-reader:user:none"},
+    )
+
+    assert response.status_code == 401
+    assert "Development auth tokens are not accepted" in response.json()["detail"]
+
+
 def test_valid_managed_jwt_syncs_current_user(client, monkeypatch, managed_auth_private_key) -> None:
     enable_managed_auth(monkeypatch)
     token = make_managed_token(managed_auth_private_key)
@@ -207,6 +289,43 @@ def test_valid_managed_jwt_syncs_current_user(client, monkeypatch, managed_auth_
     assert payload["email"] == "reader@example.test"
     assert payload["displayName"] == "Reader Example"
     assert payload["authProvider"] == "oidc"
+
+
+def test_valid_managed_jwt_repeated_api_me_updates_existing_user(
+    client,
+    monkeypatch,
+    managed_auth_private_key,
+) -> None:
+    enable_managed_auth(monkeypatch)
+    first_token = make_managed_token(managed_auth_private_key, name="First Name")
+    second_token = make_managed_token(
+        managed_auth_private_key,
+        email="updated@example.test",
+        name="Updated Name",
+    )
+
+    first = client.get("/api/me", headers={"Authorization": f"Bearer {first_token}"})
+    second = client.get("/api/me", headers={"Authorization": f"Bearer {second_token}"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] == second.json()["id"] == "auth0-reader"
+    assert second.json()["email"] == "updated@example.test"
+    assert second.json()["displayName"] == "Updated Name"
+
+
+def test_valid_managed_jwt_syncs_current_user_in_deployed_environment(
+    client,
+    monkeypatch,
+    managed_auth_private_key,
+) -> None:
+    enable_managed_auth(monkeypatch, app_env="staging")
+    token = make_managed_token(managed_auth_private_key)
+
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "auth0-reader"
 
 
 def test_valid_managed_jwt_allows_owner_user_feature_access(
@@ -245,6 +364,20 @@ def test_managed_jwt_rejects_invalid_audience(client, monkeypatch, managed_auth_
 
     assert response.status_code == 401
     assert "audience" in response.json()["detail"]
+
+
+def test_managed_jwt_rejects_unsupported_algorithm(
+    client,
+    monkeypatch,
+    managed_auth_private_key,
+) -> None:
+    enable_managed_auth(monkeypatch)
+    token = make_unsupported_algorithm_token()
+
+    response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
+    assert "invalid" in response.json()["detail"].lower()
 
 
 def test_managed_jwt_rejects_expired_token(client, monkeypatch, managed_auth_private_key) -> None:
@@ -299,6 +432,38 @@ def test_auth_enabled_user_creation_uses_current_user_identity(client, monkeypat
     assert forbidden.status_code == 403
 
 
+def test_managed_admin_can_access_another_users_resource(
+    client,
+    monkeypatch,
+    managed_auth_private_key,
+) -> None:
+    enable_managed_auth(monkeypatch)
+    admin_token = make_managed_token(
+        managed_auth_private_key,
+        sub="auth0|admin",
+        roles=["user", "admin"],
+    )
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/api/users", json={"id": "managed-reader"}, headers=headers)
+
+    response = client.get("/api/users/managed-reader", headers=headers)
+
+    assert created.status_code == 201
+    assert response.status_code == 200
+    assert response.json()["id"] == "managed-reader"
+
+
+def test_malformed_authorization_header_is_rejected(client, monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+    response = client.get("/api/me", headers={"Authorization": "Token abc"})
+
+    assert response.status_code == 401
+    assert "Invalid Authorization header" in response.json()["detail"]
+
+
 def test_role_and_subscriber_checks_return_403_for_insufficient_access() -> None:
     user = CurrentUser(id="reader", auth_provider="dev", auth_subject="reader", roles={"user"})
 
@@ -311,13 +476,69 @@ def test_role_and_subscriber_checks_return_403_for_insufficient_access() -> None
     assert getattr(subscriber_error.value, "status_code") == 403
 
 
-def test_production_auth_startup_validation_fails_when_config_incomplete(monkeypatch) -> None:
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("ENABLE_AUTH", "true")
+@pytest.mark.parametrize("app_env", ["internal", "beta", "staging", "production"])
+def test_deployed_auth_startup_validation_fails_when_config_incomplete(
+    monkeypatch,
+    app_env,
+) -> None:
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.setenv("ENABLE_AUTH", "false")
     monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_REQUIRED_FOR_USER_FEATURES", "false")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "true")
     monkeypatch.delenv("AUTH_JWT_ISSUER", raising=False)
     monkeypatch.delenv("AUTH_JWT_AUDIENCE", raising=False)
+    monkeypatch.delenv("AUTH_JWKS_URL", raising=False)
+    monkeypatch.delenv("AUTH_PROVIDER_METADATA_URL", raising=False)
+    monkeypatch.delenv("ALLOW_EXTERNAL_CALLS", raising=False)
     get_settings.cache_clear()
 
-    with pytest.raises(RuntimeError, match="Production auth is enabled"):
+    with pytest.raises(RuntimeError) as exc_info:
         validate_auth_startup()
+
+    message = str(exc_info.value)
+    assert f"APP_ENV={app_env}" in message
+    assert "ENABLE_AUTH" in message
+    assert "AUTH_PROVIDER" in message
+    assert "AUTH_JWT_ISSUER" in message
+    assert "AUTH_JWT_AUDIENCE" in message
+    assert "AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL" in message
+    assert "ALLOW_EXTERNAL_CALLS" in message
+
+
+def test_deployed_auth_startup_validation_fails_when_env_not_allowlisted(
+    monkeypatch,
+) -> None:
+    enable_managed_auth(monkeypatch, app_env="beta")
+    monkeypatch.setenv("EXTERNAL_CALL_ALLOWED_ENVIRONMENTS", "production")
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="EXTERNAL_CALL_ALLOWED_ENVIRONMENTS"):
+        validate_auth_startup()
+
+
+def test_valid_deployed_auth_startup_validation_passes_without_network(monkeypatch) -> None:
+    enable_managed_auth(monkeypatch, app_env="staging")
+
+    validate_auth_startup()
+
+
+def test_development_auth_startup_allows_dev_provider(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "true")
+    get_settings.cache_clear()
+
+    validate_auth_startup()
+
+
+def test_test_auth_startup_allows_dev_provider_without_external_services(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "true")
+    monkeypatch.delenv("ALLOW_EXTERNAL_CALLS", raising=False)
+    get_settings.cache_clear()
+
+    validate_auth_startup()

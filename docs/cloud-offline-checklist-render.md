@@ -55,9 +55,9 @@
 
 ## Environment Variables
 
-- [ ] `APP_ENV=<non-production-offline-env>`.
+- [ ] `APP_ENV=development` for auth-disabled offline rehearsal, or a deployed profile with managed-auth settings below.
 - [ ] `ENABLE_REAL_LLM=false`.
-- [ ] `ALLOW_EXTERNAL_CALLS=false`.
+- [ ] `ALLOW_EXTERNAL_CALLS=false` for development offline rehearsal, or `true` only for managed-auth JWKS/provider metadata in deployed profiles.
 - [ ] `ENABLE_STAGED_INTERNAL_LLM_TESTING=false`.
 - [ ] `ENABLE_INTERNAL_ACCESS_GATE=false`.
 - [ ] `ENABLE_MOCK_SERVICES=true`.
@@ -73,8 +73,8 @@
 - [ ] `AFFILIATE_PROVIDER=mock`.
 - [ ] `TTS_PROVIDER=mock`.
 - [ ] `PROVIDER_DAILY_COST_CEILING_USD=0`.
-- [ ] `ENABLE_AUTH=false`.
-- [ ] `AUTH_PROVIDER=dev`.
+- [ ] Auth-disabled offline rehearsal uses `ENABLE_AUTH=false` and `AUTH_PROVIDER=dev` only with `APP_ENV=development`.
+- [ ] Deployed-profile rehearsal uses `ENABLE_AUTH=true`, non-`dev` `AUTH_PROVIDER`, `AUTH_REQUIRED_FOR_USER_FEATURES=true`, issuer, audience, production algorithms, and JWKS or provider metadata.
 - [ ] `AUTH_ALLOW_DEV_USER_FALLBACK=false`.
 
 ## Secret Posture
@@ -85,7 +85,7 @@
 - [ ] No POI/Google Places credential configured.
 - [ ] No routing credential configured.
 - [ ] No ticketing, affiliate, or TTS credential configured.
-- [ ] No managed auth issuer/audience/JWKS/provider metadata configured.
+- [ ] No managed auth issuer/audience/JWKS/provider metadata configured for development offline rehearsal; deployed-profile rehearsal must configure them as placeholder-only deployment config references.
 - [ ] Runtime config reviewed without printing secret values.
 - [ ] Evidence contains config key names only, not values.
 

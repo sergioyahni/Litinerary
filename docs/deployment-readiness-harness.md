@@ -31,18 +31,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deployment_rea
 
 ## Default Offline Mode
 
-Default mode is deterministic and CI-safe. It sets its own mock/offline
-environment before each check:
+Default mode is deterministic and CI-safe. It sets its own environment before
+each check:
 
-- `ALLOW_EXTERNAL_CALLS=false`
+- local/test profiles use `ALLOW_EXTERNAL_CALLS=false`
+- deployed profiles use `ALLOW_EXTERNAL_CALLS=true` only for managed-auth
+  JWKS/provider metadata
 - `ENABLE_REAL_LLM=false`
 - all non-LLM live provider flags disabled
 - `ENABLE_STAGED_INTERNAL_LLM_TESTING=false`
 - `ENABLE_INTERNAL_ACCESS_GATE=false`
-- auth provider set to local/dev mode
+- local/test auth provider set to local/dev mode
+- deployed auth provider set to a placeholder managed OIDC/JWT provider
+- deployed profiles use an explicit disposable database URL instead of the
+  local SQLite fallback
+- deployed profiles set `ENABLE_DURABLE_USAGE_CONTROLS=true`
 - AI/vector/POI/routing/ticketing/affiliate/TTS providers set to fake/mock
 
-It does not read or require real API keys.
+It does not read or require real API keys. The managed-auth values are
+non-secret placeholders used to verify deployed startup enforcement.
 
 ## Checks Covered
 
@@ -54,7 +61,16 @@ The default harness checks:
 - environment templates exist and keep secret-bearing fields as placeholders
 - offline profile validation for `development`, `test`, `internal`, `staging`,
   and `production`
-- provider readiness stays mock/offline and fail-closed for every profile
+- product provider readiness stays mock/offline and fail-closed for every
+  profile
+- deployed auth readiness shows a configured managed auth provider instead of
+  development auth
+- deployed database configuration is explicit and passes startup validation
+- a disposable server database is migrated to Alembic head and seeded before
+  backend boot
+- readiness reports database connectivity `ok` and migrations `current`
+- durable usage controls are enabled for deployed profiles and disabled for
+  local/test profiles
 - staged/internal live LLM gates remain disabled
 - Alembic can upgrade a temporary SQLite DB
 - seed loading and seed validation pass
@@ -87,9 +103,11 @@ The harness intentionally does not:
 ## Pass/Fail Criteria
 
 The harness passes only if all default checks complete successfully. Any
-high-confidence secret pattern, tracked local env file, live provider readiness,
-failed seed/migration check, failed health/readiness check, failed focused tests,
-typecheck failure, or build failure is a blocker.
+high-confidence secret pattern, tracked local env file, live product-provider
+readiness, missing deployed managed-auth readiness, missing deployed database
+configuration, non-current migration state, disabled deployed durable usage
+controls, failed seed/migration check, failed health/readiness check, failed
+focused tests, typecheck failure, or build failure is a blocker.
 
 If default mode passes, local offline deployment rehearsal is reasonable as a
 next step. It remains mock-only and does not imply readiness for staged internal
@@ -120,7 +138,7 @@ approve local live, staged internal, or public/beta live deployment.
 
 ## Remaining Gaps
 
-Remaining deployment-readiness work after Batch 4:
+Remaining deployment-readiness work after S1-05:
 
 - a cloud-specific deployment rehearsal
 - durable log-sink redaction/retention evidence

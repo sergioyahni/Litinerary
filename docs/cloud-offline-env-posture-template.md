@@ -6,7 +6,7 @@ must remain mock/offline. Do not store real secrets in this file.
 ## Required Safe Values
 
 ```text
-APP_ENV=<non-production-environment>
+APP_ENV=development
 ENABLE_REAL_LLM=false
 ALLOW_EXTERNAL_CALLS=false
 ENABLE_STAGED_INTERNAL_LLM_TESTING=false
@@ -66,6 +66,11 @@ If any real provider credential is present, the rehearsal fails. If readiness
 shows any provider with `realEnabled=true`, `externalCallsAllowed=true`, or a
 non-mock mode, the rehearsal fails.
 
+This offline template intentionally uses `APP_ENV=development` because deployed
+environment names (`internal`, `beta`, `staging`, and `production`) now fail
+startup unless managed auth is configured. For any deployed-profile rehearsal,
+use placeholder-only managed JWT settings in deployment config.
+
 ## Notes
 
 - Store the real database URL only in the selected cloud platform's secure
@@ -73,4 +78,3 @@ non-mock mode, the rehearsal fails.
 - Evidence must refer to config keys by name only, not values.
 - Public/beta live generation remains blocked.
 - Staged internal testing remains `No-go`.
-

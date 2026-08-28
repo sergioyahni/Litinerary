@@ -1,0 +1,88 @@
+name: Deploy Production
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  production-approval-deploy:
+    name: Production migration, deploy, smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      LITINERARY_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      RENDER_PRODUCTION_BACKEND_DEPLOY_HOOK_URL: ${{ secrets.RENDER_PRODUCTION_BACKEND_DEPLOY_HOOK_URL }}
+      RENDER_PRODUCTION_FRONTEND_DEPLOY_HOOK_URL: ${{ secrets.RENDER_PRODUCTION_FRONTEND_DEPLOY_HOOK_URL }}
+      PRODUCTION_BACKEND_BASE_URL: ${{ vars.PRODUCTION_BACKEND_BASE_URL }}
+      PRODUCTION_FRONTEND_BASE_URL: ${{ vars.PRODUCTION_FRONTEND_BASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve release SHA
+        run: |
+          release_sha="${{ github.sha }}"
+          case "$release_sha" in
+            [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*)
+              echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Invalid release SHA" >&2
+              exit 1
+              ;;
+          esac
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.14"
+      - name: Verify production activation inputs
+        run: |
+          test -n "$LITINERARY_DATABASE_URL"
+          test -n "$RENDER_PRODUCTION_BACKEND_DEPLOY_HOOK_URL"
+          test -n "$RENDER_PRODUCTION_FRONTEND_DEPLOY_HOOK_URL"
+          test -n "$PRODUCTION_BACKEND_BASE_URL"
+          test -n "$PRODUCTION_FRONTEND_BASE_URL"
+          test -n "$RELEASE_SHA"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-ci.txt -c backend/constraints-runtime.txt
+      - name: Run production migration
+        working-directory: backend
+        env:
+          APP_ENV: production
+        run: python -m alembic upgrade head
+      - name: Verify production migration head
+        working-directory: backend
+        env:
+          APP_ENV: production
+        run: python -m alembic current
+      - name: Trigger Render production backend deploy
+        run: >
+          python scripts/ci/render_deploy.py
+          --hook-url "$RENDER_PRODUCTION_BACKEND_DEPLOY_HOOK_URL"
+          --ref "$RELEASE_SHA"
+          --label production-backend
+      - name: Trigger Render production frontend deploy
+        run: >
+          python scripts/ci/render_deploy.py
+          --hook-url "$RENDER_PRODUCTION_FRONTEND_DEPLOY_HOOK_URL"
+          --ref "$RELEASE_SHA"
+          --label production-frontend
+      - name: Production release verification and public smoke
+        run: >
+          python scripts/ci/post_deploy_smoke.py
+          --base-url "$PRODUCTION_BACKEND_BASE_URL"
+          --frontend-url "$PRODUCTION_FRONTEND_BASE_URL"
+          --expected-release-sha "$RELEASE_SHA"
+          --wait-for-release
+          --require-ready

@@ -41,10 +41,20 @@ $providerEnvNames = @(
   "AUTH_ALLOW_DEV_USER_FALLBACK",
   "AUTH_JWT_ISSUER",
   "AUTH_JWT_AUDIENCE",
+  "AUTH_JWT_ALGORITHMS",
   "AUTH_JWKS_URL",
   "AUTH_PROVIDER_METADATA_URL",
   "CORS_ALLOWED_ORIGINS",
   "LITINERARY_DATABASE_URL",
+  "ENABLE_DURABLE_USAGE_CONTROLS",
+  "ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE",
+  "ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY",
+  "REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE",
+  "REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY",
+  "SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE",
+  "SUBSCRIBER_CHAT_MESSAGES_PER_DAY",
+  "PROVIDER_DAILY_REQUEST_CEILING",
+  "USAGE_COUNTER_RETENTION_DAYS",
   "LITINERARY_AI_PROVIDER",
   "LLM_PROVIDER",
   "LLM_API_KEY",
@@ -137,17 +147,34 @@ function Set-OfflineProfileEnvironment {
   $env:ENABLE_REAL_TICKETING = "false"
   $env:ENABLE_REAL_TTS = "false"
   $env:ENABLE_AFFILIATE_LINKS = "false"
-  $env:ALLOW_EXTERNAL_CALLS = "false"
+  $isDeployedProfile = $Profile -in @("internal", "beta", "staging", "production")
+  $env:ALLOW_EXTERNAL_CALLS = if ($isDeployedProfile) { "true" } else { "false" }
   $env:ENABLE_INTEGRATION_TESTS = "false"
   $env:ENABLE_STAGED_INTERNAL_LLM_TESTING = "false"
   $env:ENABLE_INTERNAL_ACCESS_GATE = "false"
-  $env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS = "production"
+  $env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS = if ($isDeployedProfile) { "internal,beta,staging,production" } else { "production" }
   $env:LLM_ALLOWED_ENVIRONMENTS = "development,production"
-  $env:ENABLE_AUTH = "false"
-  $env:AUTH_PROVIDER = "dev"
+  $env:ENABLE_AUTH = if ($isDeployedProfile) { "true" } else { "false" }
+  $env:AUTH_PROVIDER = if ($isDeployedProfile) { "oidc" } else { "dev" }
+  $env:AUTH_REQUIRED_FOR_USER_FEATURES = if ($isDeployedProfile) { "true" } else { "false" }
   $env:AUTH_ALLOW_DEV_USER_FALLBACK = if ($Profile -in @("development", "test")) { "true" } else { "false" }
+  if ($isDeployedProfile) {
+    $env:AUTH_JWT_ISSUER = "https://auth.example.test/"
+    $env:AUTH_JWT_AUDIENCE = "litinerary-api"
+    $env:AUTH_JWT_ALGORITHMS = "RS256"
+    $env:AUTH_JWKS_URL = "https://auth.example.test/.well-known/jwks.json"
+  }
   $env:CORS_ALLOWED_ORIGINS = "http://127.0.0.1:5173"
   $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/deployment-readiness-$Profile-$PID.db"
+  $env:ENABLE_DURABLE_USAGE_CONTROLS = if ($isDeployedProfile) { "true" } else { "false" }
+  $env:ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE = "4"
+  $env:ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY = "20"
+  $env:REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE = "10"
+  $env:REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY = "100"
+  $env:SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE = "10"
+  $env:SUBSCRIBER_CHAT_MESSAGES_PER_DAY = "100"
+  $env:PROVIDER_DAILY_REQUEST_CEILING = "1000"
+  $env:USAGE_COUNTER_RETENTION_DAYS = "90"
   $env:LITINERARY_AI_PROVIDER = "fake"
   $env:LLM_PROVIDER = "fake"
   $env:LITINERARY_VECTOR_PROVIDER = "fake"
@@ -294,6 +321,7 @@ from app.core.readiness import provider_status
 
 settings = get_settings()
 providers = provider_status(settings)
+deployed = settings.app_env in {"internal", "beta", "staging", "production"}
 payload = {
     "app_env": settings.app_env,
     "allow_external_calls": settings.allow_external_calls,
@@ -301,14 +329,40 @@ payload = {
     "enable_staged_internal_llm_testing": settings.enable_staged_internal_llm_testing,
     "enable_internal_access_gate": settings.enable_internal_access_gate,
     "providers": providers,
+    "database": {
+        "configured": settings.database_url_configured,
+        "dialect": settings.safe_database_dialect(),
+        "configurationErrors": settings.database_configuration_validation_errors(),
+    },
+    "usageControls": {
+        "durable": settings.enable_durable_usage_controls,
+        "providerDailyRequestCeiling": settings.provider_daily_request_ceiling,
+        "retentionDays": settings.usage_counter_retention_days,
+    },
 }
-if settings.allow_external_calls:
-    raise SystemExit("External calls must be disabled in deployment-readiness default profiles.")
+if deployed and not settings.allow_external_calls:
+    raise SystemExit("Managed auth requires external calls in deployed readiness profiles.")
+if not deployed and settings.allow_external_calls:
+    raise SystemExit("External calls must be disabled in local/test deployment-readiness profiles.")
 if settings.enable_real_llm:
     raise SystemExit("Live LLM must be disabled in deployment-readiness default profiles.")
 if settings.enable_staged_internal_llm_testing or settings.enable_internal_access_gate:
     raise SystemExit("Staged/internal live LLM gates must remain disabled.")
+if deployed:
+    if not settings.database_url_configured or settings.database_configuration_validation_errors():
+        raise SystemExit("Deployed profile database URL must be explicitly configured.")
+    if not settings.enable_durable_usage_controls:
+        raise SystemExit("Durable usage controls must be enabled in deployed readiness profiles.")
+else:
+    if settings.enable_durable_usage_controls:
+        raise SystemExit("Durable usage controls must remain disabled in local/test readiness profiles.")
 for provider in providers:
+    if deployed and provider["providerType"] == "auth":
+        if not provider["realEnabled"] or provider["mode"] != "real":
+            raise SystemExit("Managed auth provider is not enabled in deployed profile.")
+        if not provider["credentialsConfigured"] or not provider["externalCallsAllowed"]:
+            raise SystemExit("Managed auth provider is not configured for deployed profile.")
+        continue
     if provider["realEnabled"] or provider["externalCallsAllowed"]:
         raise SystemExit(f"Provider {provider['providerType']} is not fail-closed.")
     if provider["mode"] != "mock":
@@ -387,6 +441,8 @@ function Test-HealthReadinessServer {
   Push-Location $backend
   $server = $null
   try {
+    Invoke-NativeCommand { & $python -m alembic upgrade head } "Temporary server DB Alembic upgrade"
+    Invoke-NativeCommand { & $python -m scripts.seed_database } "Temporary server DB seed"
     $server = Start-Process -FilePath $python -ArgumentList @(
       "-m", "uvicorn", "app.main:app",
       "--host", "127.0.0.1",
@@ -402,10 +458,28 @@ function Test-HealthReadinessServer {
     if ($readiness.status -ne "ready") {
       throw "Readiness endpoint did not return ready."
     }
-    if ($readiness.checks.externalCalls.allowed -ne $false) {
-      throw "Readiness allowed external calls."
+    if ($readiness.checks.database.configured -ne $true) {
+      throw "Readiness database check did not report explicit configuration."
+    }
+    if ($readiness.checks.database.connectivity -ne "ok") {
+      throw "Readiness database connectivity did not report ok."
+    }
+    if ($readiness.checks.database.migrations.status -ne "current") {
+      throw "Readiness database migrations did not report current."
+    }
+    if ($readiness.checks.externalCalls.allowed -ne $true) {
+      throw "Readiness did not allow managed-auth external calls in staging."
     }
     foreach ($provider in $readiness.checks.providers) {
+      if ($provider.providerType -eq "auth") {
+        if ($provider.realEnabled -ne $true -or $provider.mode -ne "real") {
+          throw "Auth provider is not enabled in staging readiness."
+        }
+        if ($provider.credentialsConfigured -ne $true -or $provider.externalCallsAllowed -ne $true) {
+          throw "Auth provider is not configured for staging readiness."
+        }
+        continue
+      }
       if ($provider.realEnabled -ne $false) {
         throw "Provider $($provider.providerType) is real-enabled in offline readiness."
       }

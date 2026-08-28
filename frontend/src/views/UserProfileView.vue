@@ -1,17 +1,30 @@
 <template>
   <section class="page-banner">
     <div class="container">
-      <h1>Development Profile</h1>
-      <p>Use a temporary Phase 2 user record to try preferences, bookmarks, and reviews.</p>
+      <h1>Profile</h1>
+      <p>Manage reading preferences for your Litinerary account.</p>
     </div>
   </section>
 
   <section class="section-margin">
     <div class="container">
-      <div class="config-panel">
+      <div v-if="authStore.isAuthEnabled && !authStore.isAuth0Configured" class="placeholder-panel error-panel">
+        <h2>Authentication is not configured</h2>
+        <p>{{ authStore.error ?? "Auth0 frontend configuration is incomplete." }}</p>
+      </div>
+
+      <div v-else-if="authStore.isAuthEnabled && !authStore.isAuthenticated" class="placeholder-panel">
+        <h2>Sign in to manage your profile</h2>
+        <p>Your preferences are saved to your verified Litinerary account.</p>
+        <button class="button compact-button" type="button" @click="authStore.login('/account')">
+          Sign In
+        </button>
+      </div>
+
+      <div v-else class="config-panel">
         <div>
-          <p class="eyebrow">Not production authentication</p>
-          <h2>{{ userStore.profile?.displayName ?? "Development Reader" }}</h2>
+          <p class="eyebrow">{{ authStore.isAuthEnabled ? "Litinerary account" : "Development account" }}</p>
+          <h2>{{ userStore.profile?.displayName ?? authStore.currentUser?.displayName ?? "Reader" }}</h2>
           <p>User ID: {{ userStore.userId }}</p>
         </div>
 
@@ -19,7 +32,12 @@
           {{ userStore.error }}
         </div>
 
-        <button class="button compact-button" type="button" @click="userStore.ensureDevelopmentUser">
+        <button
+          v-if="!authStore.isAuthEnabled"
+          class="button compact-button"
+          type="button"
+          @click="userStore.ensureDevelopmentUser"
+        >
           Create or Load Development User
         </button>
 
@@ -55,8 +73,10 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useAuthStore } from "../stores/authStore";
 import { useUserStore } from "../stores/userStore";
 
+const authStore = useAuthStore();
 const userStore = useUserStore();
 const preferredPace = ref("balanced");
 const preferredTheme = ref("classic literature");

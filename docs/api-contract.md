@@ -30,11 +30,12 @@ Common errors:
 - `400`: `{"detail": "<validation message>"}`
 - `409`: `{"detail": "<conflict message>"}`
 - `422`: FastAPI request validation error.
-- `429`: provider-neutral limit failures such as `{"detail": {"code": "rate_limited", "message": "...", "metadata": {...}}}` or `quota_exceeded`.
+- `429`: provider-neutral limit failures such as `{"detail": {"code": "rate_limited", "message": "...", "metadata": {...}}}` or `quota_exceeded`. Responses include `Retry-After` when the failing minute/day window is known.
 - `413`: provider-neutral input-size failures such as `{"detail": {"code": "input_too_large", "message": "...", "metadata": {...}}}`.
+- `503`: provider dependency unavailable, including fail-closed durable usage limiter failures.
 - `500`: judge rejection may return `{"detail": {"message": "...", "reasons": [...], "warnings": [...], "confidenceScore": 0.2, "requiredFixes": [...]}}`.
 
-Limit-related provider errors use `detail.code` values including `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`. Frontend clients should display `detail.message`.
+Limit-related provider errors use `detail.code` values including `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`. Frontend clients should display `detail.message`; frontend `ApiError` also exposes `isRateLimited` and `retryAfterSeconds`.
 
 ## Core Schemas
 
@@ -58,7 +59,13 @@ Limit-related provider errors use `detail.code` values including `rate_limited`,
 
 `AudioMetadataResponse`: `available`, `url`, `format`, `durationSeconds`, `providerName`, `providerType`, `providerVersion`, `placeholder`, `warnings`. Current mock responses never serve generated audio files; `url` remains null.
 
-Public repository endpoints return only itineraries where `isPublic=true` and `visibility="public"`. Private itinerary ownership enforcement is foundation-only until production auth and ownership route work are completed.
+Public repository endpoints return only itineraries where `isPublic=true` and
+`visibility="public"`. Private and unlisted itineraries are not listed publicly.
+The shared itinerary detail/narration endpoints return private or unlisted
+itineraries only to their verified owner or an admin. Missing IDs and
+unauthorized private IDs both use `404` to avoid exposing private itinerary
+existence. Until a dedicated sharing feature exists, `visibility="unlisted"` is
+treated like private.
 
 ## Public Endpoints
 
@@ -80,7 +87,9 @@ Audience: user-facing/dev.
 
 `GET /api/readiness`
 
-Purpose: beta-readiness check for database connectivity, provider configuration mode, external-call policy, and mock-service mode.
+Purpose: beta-readiness check for database configuration, connectivity,
+Alembic migration state, provider configuration mode, external-call policy,
+mock-service mode, and durable usage controls.
 
 Response:
 
@@ -89,7 +98,19 @@ Response:
   "status": "ready",
   "appEnv": "development",
   "checks": {
-    "database": {"status": "ok"},
+    "database": {
+      "status": "ok",
+      "required": false,
+      "configured": true,
+      "dialect": "sqlite",
+      "connectivity": "ok",
+      "configurationErrors": [],
+      "migrations": {
+        "status": "current",
+        "currentRevisions": ["20260815_0009"],
+        "expectedHeads": ["20260815_0009"]
+      }
+    },
     "providers": [
       {
         "providerType": "llm",
@@ -102,12 +123,36 @@ Response:
       }
     ],
     "externalCalls": {"allowed": false, "integrationTestsEnabled": false},
-    "mockServices": {"enabled": true}
+    "mockServices": {"enabled": true},
+    "usageControls": {
+      "durable": false,
+      "anonymousItineraryGenerationsPerMinute": 10,
+      "anonymousItineraryGenerationsPerDay": 100,
+      "registeredUserItineraryGenerationsPerMinute": 30,
+      "registeredUserItineraryGenerationsPerDay": 250,
+      "subscriberChatMessagesPerMinute": 60,
+      "subscriberChatMessagesPerDay": 250,
+      "providerDailyRequestCeiling": 1000,
+      "providerDailyCostCeilingUsd": 0,
+      "counterRetentionDays": 90
+    }
   }
 }
 ```
 
-Readiness responses expose credential presence as booleans only. They must not include API keys, tokens, raw provider config values, prompts, copyrighted input, or user payloads.
+`GET /api/health` remains a minimal liveness endpoint and does not assert
+database migration readiness. In deployed environments (`internal`, `beta`,
+`staging`, and `production`), `GET /api/readiness` reports `status="ready"` only
+when `LITINERARY_DATABASE_URL` is explicitly configured, the database is
+reachable, and the `alembic_version` table is at the repository migration head.
+Missing migration metadata, old revisions, unknown revisions, or connectivity
+failure return a non-ready status. Local development and standard tests may use
+SQLite fallback databases; deployed profiles must not silently fall back to the
+default local SQLite URL.
+
+Readiness responses expose credential presence as booleans and database
+metadata as safe labels only. They must not include API keys, tokens, database
+URLs, raw provider config values, prompts, copyrighted input, or user payloads.
 
 Audience: operational/dev.
 
@@ -147,6 +192,13 @@ Audience: user-facing.
 
 Purpose: find an exact public itinerary, adapt a partial public match, or generate a deterministic mock itinerary.
 
+Authentication: anonymous/public.
+
+Ownership and visibility: generated repository itineraries are public
+(`isPublic=true`, `visibility="public"`) and ownerless. Ownership fields such as
+`ownerUserId`, `user_id`, and `createdByUserId` are not part of the request
+contract and do not assign ownership.
+
 Request body:
 
 ```json
@@ -182,6 +234,11 @@ Generated and adapted itineraries may include day-level routing metadata. By def
 
 Purpose: search/browse public itinerary repository.
 
+Authentication: anonymous/public.
+
+Authorization and visibility: returns public repository itineraries only.
+Private and unlisted rows are excluded.
+
 Parameters:
 
 - `city_id` optional destination ID.
@@ -201,13 +258,25 @@ Audience: user-facing.
 
 `GET /api/itineraries/{itinerary_id}`
 
-Purpose: fetch one itinerary by ID.
+Purpose: fetch one public itinerary by ID, or fetch a private/unlisted itinerary
+when the request carries a verified owner/admin identity.
+
+Authentication: anonymous for public itineraries; bearer token required for
+private or unlisted owner/admin access.
+
+Authorization and visibility:
+
+- public itinerary: anyone may read;
+- private or unlisted itinerary: owner or admin only;
+- unauthorized private/unlisted access returns `404`.
 
 Response: `Itinerary`.
 
 Errors:
 
 - `404` unknown itinerary.
+- `404` private or unlisted itinerary not accessible to the caller.
+- `401` malformed/invalid bearer token when one is supplied.
 
 Audience: user-facing.
 
@@ -216,6 +285,9 @@ Audience: user-facing.
 `GET /api/itineraries/{itinerary_id}/narration`
 
 Purpose: return provider-neutral narration for an itinerary. This is deterministic mock/local behavior and is safe to call without prior generation.
+
+Authentication and authorization: same as itinerary detail. Public itinerary
+narration remains anonymous. Private/unlisted narration is owner/admin only.
 
 Response: `ItineraryNarrationResponse`.
 
@@ -266,6 +338,8 @@ Response:
 Errors:
 
 - `404` unknown itinerary.
+- `404` private or unlisted itinerary not accessible to the caller.
+- `401` malformed/invalid bearer token when one is supplied.
 - `422` invalid request body.
 
 Audience: user-facing. Text fallback should remain available even when audio is unavailable.
@@ -275,6 +349,12 @@ Audience: user-facing. Text fallback should remain available even when audio is 
 `POST /api/itineraries/adapt`
 
 Purpose: adapt an existing public itinerary to a requested duration and transportation mode.
+
+Authentication: anonymous/public.
+
+Authorization and visibility: only public repository source itineraries can be
+adapted through this endpoint. Private and unlisted source IDs return `404`,
+even for the owner, until a dedicated private edit/adaptation workflow exists.
 
 Request body:
 
@@ -298,7 +378,7 @@ Audience: user-facing.
 
 ## User Endpoints
 
-Auth mode: auth is disabled by default. When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user endpoints require `Authorization: Bearer <token>`.
+Auth mode: auth is disabled by default in local development/test, so public catalog, public repository, narration, adaptation, and basic generation remain anonymous. In deployed environments (`internal`, `beta`, `staging`, and `production`), startup requires managed JWT auth configuration and user endpoints require `Authorization: Bearer <token>`.
 
 Local/test development can use the mock token format:
 
@@ -306,7 +386,9 @@ Local/test development can use the mock token format:
 dev:<user_id>:<comma-separated-roles>:<subscription_status>
 ```
 
-Development tokens and missing-token fallback are rejected in beta/staging/production. Managed providers use the same backend auth boundary and validate JWT issuer, audience, accepted algorithms, signature, expiration, and claims using `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`. Claims map through `AUTH_USER_ID_CLAIM`, `AUTH_ROLES_CLAIM`, `AUTH_SUBSCRIPTION_CLAIM`, `AUTH_EMAIL_CLAIM`, and `AUTH_DISPLAY_NAME_CLAIM`.
+Development tokens and missing-token fallback are rejected in internal/beta/staging/production. Managed providers use the same backend auth boundary and validate JWT issuer, audience, accepted algorithms, signature, expiration, and claims using `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`. Claims map through `AUTH_USER_ID_CLAIM`, `AUTH_ROLES_CLAIM`, `AUTH_SUBSCRIPTION_CLAIM`, `AUTH_EMAIL_CLAIM`, and `AUTH_DISPLAY_NAME_CLAIM`.
+
+Deployed startup requires `ENABLE_AUTH=true`, a non-`dev` `AUTH_PROVIDER`, issuer, audience, production algorithms, JWKS or provider metadata, `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and the current `APP_ENV` in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 
 ### Current User
 
@@ -338,7 +420,7 @@ Errors:
 
 - `409` user already exists.
 
-Audience: development user-facing account foundation.
+Audience: authenticated user-facing account foundation in deployed environments; development account foundation locally.
 
 ### Get User
 
@@ -379,11 +461,17 @@ Audience: development user-facing account foundation.
 
 Purpose: add itinerary bookmark.
 
+Authorization: the `{user_id}` path is owner/admin guarded when auth is enabled
+or in deployed environments. The target itinerary must be public or accessible
+to the verified owner/admin. A client-controlled user ID or itinerary ID is not
+sufficient to bookmark another user's private itinerary.
+
 Response: `UserBookmarksResponse` with `userId` and `itineraries`.
 
 Errors:
 
 - `404` unknown user or itinerary.
+- `404` private or unlisted itinerary not accessible to the caller.
 
 Audience: development user-facing account foundation.
 
@@ -393,7 +481,16 @@ Audience: development user-facing account foundation.
 
 Purpose: remove itinerary bookmark.
 
+Authorization: owner/admin guarded for the bookmark collection. Removing a
+bookmark mutates only that user's bookmark collection and does not expose
+private itinerary details.
+
 Response: `UserBookmarksResponse`.
+
+Authorization and visibility: owner/admin guarded for `{user_id}`. Returned
+itineraries are filtered to public rows plus private/unlisted rows accessible to
+the verified current user/admin, so stale cross-user private bookmarks are not
+returned.
 
 Errors:
 
@@ -419,6 +516,10 @@ Audience: development user-facing account foundation.
 
 Purpose: save itinerary review and mirror it into fake vector/mock AI feedback layers.
 
+Authorization: owner/admin guarded for `{user_id}`. The reviewed itinerary must
+be public or accessible to the verified owner/admin. A caller cannot review
+another user's private itinerary by supplying its ID.
+
 Request:
 
 ```json
@@ -430,6 +531,7 @@ Response: `UserReview`.
 Errors:
 
 - `404` unknown user or itinerary.
+- `404` private or unlisted itinerary not accessible to the caller.
 - `422` invalid rating/body.
 
 Audience: development user-facing account foundation.

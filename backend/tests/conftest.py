@@ -11,6 +11,7 @@ from app.data import mock_data
 from app.main import app
 from app.models import domain  # noqa: F401
 from app.services.seed import seed_database
+from app.services.usage_policy import get_usage_guard
 
 
 BASE_ITINERARIES = deepcopy(mock_data.ITINERARIES)
@@ -18,7 +19,10 @@ BASE_ITINERARIES = deepcopy(mock_data.ITINERARIES)
 
 @pytest.fixture(autouse=True)
 def reset_mock_repository() -> None:
+    get_usage_guard.cache_clear()
     mock_data.ITINERARIES[:] = deepcopy(BASE_ITINERARIES)
+    yield
+    get_usage_guard.cache_clear()
 
 
 @pytest.fixture

@@ -224,12 +224,16 @@ def require_user_feature_access(
     current_user: CurrentUser | None = Depends(optional_current_user),
     settings: Settings = Depends(get_settings),
 ) -> CurrentUser | None:
-    if not settings.auth_required_for_user_features:
+    if not user_features_require_auth(settings):
         return current_user
     if current_user is None:
         raise _unauthorized("Authentication is required for user features.")
     require_owner_or_admin(user_id, current_user)
     return current_user
+
+
+def user_features_require_auth(settings: Settings) -> bool:
+    return settings.auth_required_for_user_features or settings.is_deployed_environment
 
 
 def require_role(role: str, user: CurrentUser = Depends(require_current_user)) -> CurrentUser:
@@ -258,24 +262,28 @@ def require_owner_or_admin(resource_user_id: str, user: CurrentUser) -> None:
 
 def validate_auth_startup(settings: Settings | None = None) -> None:
     resolved = settings or get_settings()
-    if not resolved.enable_auth:
-        return
-    if resolved.is_deployed_environment and resolved.auth_allow_dev_user_fallback:
-        raise RuntimeError("Development user fallback is not allowed in deployed environments.")
-    if not resolved.is_production:
+    deployed_errors = resolved.deployed_auth_validation_errors()
+    if deployed_errors:
+        raise RuntimeError(
+            f"Deployed authentication configuration is incomplete for APP_ENV={resolved.app_env}: "
+            + " ".join(deployed_errors)
+        )
+    if not resolved.enable_auth or resolved.auth_provider == "dev":
         return
     missing = []
     if not resolved.auth_provider or resolved.auth_provider == "dev":
-        missing.append("AUTH_PROVIDER must be a production provider")
+        missing.append("AUTH_PROVIDER must be a managed provider")
     if not resolved.auth_jwt_issuer:
         missing.append("AUTH_JWT_ISSUER")
     if not resolved.auth_jwt_audience:
         missing.append("AUTH_JWT_AUDIENCE")
+    if not resolved.auth_jwt_algorithms or resolved.auth_jwt_algorithms == ["dev"]:
+        missing.append("AUTH_JWT_ALGORITHMS")
     if not resolved.auth_jwks_url and not resolved.auth_provider_metadata_url:
         missing.append("AUTH_JWKS_URL or AUTH_PROVIDER_METADATA_URL")
     if missing:
         raise RuntimeError(
-            "Production auth is enabled but configuration is incomplete: "
+            "Managed auth is enabled but configuration is incomplete: "
             + ", ".join(missing)
         )
 

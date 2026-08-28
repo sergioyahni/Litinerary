@@ -10,7 +10,7 @@ live provider credential is present in Render config, the rehearsal fails.
 ## Backend Web Service Values
 
 ```text
-APP_ENV=<non-production-offline-env>
+APP_ENV=development
 PORT=<render-provided-port>
 LOG_LEVEL=<render-log-level-placeholder>
 CORS_ALLOWED_ORIGINS=<render-frontend-preview-origin-placeholder>
@@ -74,7 +74,13 @@ tracked files.
 
 ## Forbidden For This Rehearsal
 
-Do not configure these keys with real values:
+This offline template intentionally uses `APP_ENV=development` because deployed
+environment names (`internal`, `beta`, `staging`, and `production`) now fail
+startup unless managed auth is configured. For any deployed-profile rehearsal,
+replace the auth block with placeholder-only managed JWT settings in deployment
+config, not in this tracked file.
+
+Do not configure these keys with real values in this offline template:
 
 ```text
 LLM_API_KEY

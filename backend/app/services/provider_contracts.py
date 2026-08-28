@@ -104,17 +104,20 @@ class ProviderError(RuntimeError):
         message: str,
         *,
         metadata: ProviderMetadata | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.metadata = metadata
+        self.retry_after_seconds = retry_after_seconds
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "code": self.code.value,
             "message": self.message,
             "metadata": self.metadata.public_dict() if self.metadata else None,
+            "retryAfterSeconds": self.retry_after_seconds,
         }
 
 

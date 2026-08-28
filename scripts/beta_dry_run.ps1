@@ -65,14 +65,28 @@ function Set-BetaEnvironment {
   $env:ENABLE_REAL_TICKETING = "false"
   $env:ENABLE_REAL_TTS = "false"
   $env:ENABLE_AFFILIATE_LINKS = "false"
-  $env:ALLOW_EXTERNAL_CALLS = "false"
+  $env:ALLOW_EXTERNAL_CALLS = "true"
   $env:ENABLE_INTEGRATION_TESTS = "false"
-  $env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS = "production"
-  $env:ENABLE_AUTH = "false"
-  $env:AUTH_PROVIDER = "dev"
+  $env:EXTERNAL_CALL_ALLOWED_ENVIRONMENTS = "beta,staging"
+  $env:ENABLE_AUTH = "true"
+  $env:AUTH_PROVIDER = "oidc"
+  $env:AUTH_REQUIRED_FOR_USER_FEATURES = "true"
   $env:AUTH_ALLOW_DEV_USER_FALLBACK = "false"
+  $env:AUTH_JWT_ISSUER = "https://auth.example.test/"
+  $env:AUTH_JWT_AUDIENCE = "litinerary-api"
+  $env:AUTH_JWT_ALGORITHMS = "RS256"
+  $env:AUTH_JWKS_URL = "https://auth.example.test/.well-known/jwks.json"
   $env:CORS_ALLOWED_ORIGINS = "http://127.0.0.1:5173"
   $env:LITINERARY_DATABASE_URL = "sqlite:///../tests/.artifacts/tmp/litinerary-beta-dry-run.db"
+  $env:ENABLE_DURABLE_USAGE_CONTROLS = "true"
+  $env:ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE = "4"
+  $env:ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY = "20"
+  $env:REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE = "10"
+  $env:REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY = "100"
+  $env:SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE = "10"
+  $env:SUBSCRIBER_CHAT_MESSAGES_PER_DAY = "100"
+  $env:PROVIDER_DAILY_REQUEST_CEILING = "1000"
+  $env:USAGE_COUNTER_RETENTION_DAYS = "90"
   $env:LITINERARY_AI_PROVIDER = "fake"
   $env:LLM_PROVIDER = "fake"
   $env:LITINERARY_VECTOR_PROVIDER = "fake"
@@ -143,8 +157,22 @@ function Set-BackendTestEnvironment {
     "AUTH_PROVIDER",
     "AUTH_REQUIRED_FOR_USER_FEATURES",
     "AUTH_ALLOW_DEV_USER_FALLBACK",
+    "AUTH_JWT_ISSUER",
+    "AUTH_JWT_AUDIENCE",
+    "AUTH_JWT_ALGORITHMS",
+    "AUTH_JWKS_URL",
+    "AUTH_PROVIDER_METADATA_URL",
     "CORS_ALLOWED_ORIGINS",
     "LITINERARY_DATABASE_URL",
+    "ENABLE_DURABLE_USAGE_CONTROLS",
+    "ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE",
+    "ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY",
+    "REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE",
+    "REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY",
+    "SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE",
+    "SUBSCRIBER_CHAT_MESSAGES_PER_DAY",
+    "PROVIDER_DAILY_REQUEST_CEILING",
+    "USAGE_COUNTER_RETENTION_DAYS",
     "PROVIDER_DAILY_COST_CEILING_USD"
   )
   foreach ($name in $names) {
@@ -174,8 +202,22 @@ function Set-FrontendEnvironment {
     "AUTH_PROVIDER",
     "AUTH_REQUIRED_FOR_USER_FEATURES",
     "AUTH_ALLOW_DEV_USER_FALLBACK",
+    "AUTH_JWT_ISSUER",
+    "AUTH_JWT_AUDIENCE",
+    "AUTH_JWT_ALGORITHMS",
+    "AUTH_JWKS_URL",
+    "AUTH_PROVIDER_METADATA_URL",
     "CORS_ALLOWED_ORIGINS",
     "LITINERARY_DATABASE_URL",
+    "ENABLE_DURABLE_USAGE_CONTROLS",
+    "ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE",
+    "ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY",
+    "REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE",
+    "REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY",
+    "SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE",
+    "SUBSCRIBER_CHAT_MESSAGES_PER_DAY",
+    "PROVIDER_DAILY_REQUEST_CEILING",
+    "USAGE_COUNTER_RETENTION_DAYS",
     "PROVIDER_DAILY_COST_CEILING_USD"
   )
   foreach ($name in $names) {
@@ -233,13 +275,22 @@ try {
     }
     if ($health.status -ne "ok") { throw "Health check failed." }
     if ($readiness.status -ne "ready") { throw "Readiness check did not report ready." }
-    if ($readiness.checks.externalCalls.allowed -ne $false) { throw "External calls should be disabled in beta dry run." }
+    if ($readiness.checks.database.configured -ne $true) { throw "Database URL should be explicit in beta dry run." }
+    if ($readiness.checks.database.connectivity -ne "ok") { throw "Database connectivity should be ok in beta dry run." }
+    if ($readiness.checks.database.migrations.status -ne "current") { throw "Database migration head should be current in beta dry run." }
+    if ($readiness.checks.usageControls.durable -ne $true) { throw "Durable usage controls should be enabled in beta dry run." }
+    if ($readiness.checks.externalCalls.allowed -ne $true) { throw "Managed auth external calls should be enabled in beta dry run." }
     foreach ($provider in $readiness.checks.providers) {
+      if ($provider.providerType -eq "auth") {
+        if ($provider.realEnabled -ne $true -or $provider.mode -ne "real") { throw "Auth provider should be real-enabled in beta dry run." }
+        if ($provider.credentialsConfigured -ne $true -or $provider.externalCallsAllowed -ne $true) { throw "Auth provider should be configured in beta dry run." }
+        continue
+      }
       if ($provider.realEnabled -ne $false) { throw "Provider $($provider.providerType) should not be real-enabled in beta dry run." }
       if ($provider.externalCallsAllowed -ne $false) { throw "Provider $($provider.providerType) should not allow external calls in beta dry run." }
     }
     if ([int]$admin.StatusCode -ne 403) { throw "Admin route should be disabled in beta dry run." }
-    if ([int]$debug.StatusCode -ne 403) { throw "Debug route should be disabled in beta dry run." }
+    if ([int]$debug.StatusCode -ne 403) { throw "Development-only route should be disabled in beta dry run." }
     Write-Host "Health/readiness/admin/debug checks passed."
   }
   finally {

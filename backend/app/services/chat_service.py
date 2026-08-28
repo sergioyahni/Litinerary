@@ -94,8 +94,8 @@ def add_chat_message(
     session_id: str,
     request: ChatMessageCreate,
 ) -> ChatMessageResponse:
-    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     session = _load_session(db, session_id, user.id)
+    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     now = utc_now_iso()
     user_message = ChatMessageModel(
         id=f"chatmsg-{uuid4().hex}",
@@ -136,9 +136,9 @@ def refine_itinerary_from_chat(
     session_id: str,
     request: ChatItineraryRefinementRequest,
 ) -> ChatItineraryRefinementResponse:
-    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     session = _load_session(db, session_id, user.id)
     source = get_itinerary(request.sourceItineraryId, db=db)
+    get_usage_guard().guard_subscriber_chat(user_id=user.id)
     generation_request = ItineraryGenerationRequest(
         destinationId=source.destinationId,
         bookId=source.bookId,

@@ -2,6 +2,8 @@
 
 Audit date: 2026-06-15
 
+Status note added 2026-08-15: this is a historical beta audit. Auth and itinerary ownership findings were superseded by `docs/stage-1-s1-02-managed-auth-report.md` and `docs/stage-1-s1-03-itinerary-ownership-report.md`; remaining beta/production cautions should be read together with those newer reports.
+
 Scope: beta release hardening audit against `docs/App_Design_Document_v2.md`, current repository files, configuration examples, tests, provider-adapter boundaries, safety gates, frontend flows, backend services, and migrations. No real providers were connected and no deployment was performed.
 
 ## 1. Executive Summary
@@ -10,7 +12,7 @@ Litinerary is ready for a local beta demo using deterministic mock/fake services
 
 Litinerary is conditionally ready for a private staging beta only if it is run as a mock-only, non-production, protected beta environment using the beta profile in `.env.beta.example`, exact CORS origins, disabled admin/debug routes, disabled external calls, and the dry-run gate in `scripts/beta_dry_run.ps1`.
 
-Litinerary is not ready for production. Production blockers remain around managed authentication, durable rate/cost controls, real provider integration gates, production observability/alerting, deployment pipeline, secret management, migration/backup operations, and full private ownership enforcement.
+Litinerary is not ready for production. Production blockers remain around managed authentication provider staging, durable rate/cost controls, real provider integration gates, production observability/alerting, deployment pipeline, secret management, migration/backup operations, and dedicated private itinerary CRUD/sharing policy.
 
 Verification performed:
 
@@ -52,7 +54,7 @@ Behind feature flags:
 Missing or deferred:
 
 - Managed auth provider, real JWT validation, `/api/me` current-user flow, and production-grade frontend route/session protection.
-- Production owner/visibility model for private itinerary CRUD beyond current foundations.
+- Dedicated production private itinerary CRUD and sharing UI beyond the current owner/admin access boundary.
 - Durable distributed rate limits and cost metering; current usage policy is in-memory/local (`backend/app/services/usage_policy.py`).
 - Real provider integration tests and live-provider operational gates.
 - Deployment pipeline, secret manager integration, production logs/metrics/alerts, backups, rollback drills, dependency scanning, and data retention policy.
@@ -74,7 +76,7 @@ Secret handling: Pass for current repo templates. Env examples are placeholder-o
 
 Auth readiness: No-go for production. Auth foundation supports only local/test `dev:<user_id>:<roles>:<subscription_status>` tokens and rejects dev auth in production. Managed provider validation is not implemented.
 
-Ownership/visibility model: Partial. Database fields and public repository filtering exist; subscriber refined itineraries are private/subscriber-only. Full production ownership route coverage depends on real auth and future private itinerary endpoints.
+Ownership/visibility model: Updated after this historical audit. S1-03 now enforces public repository filtering, owner/admin private itinerary detail/narration access, subscriber private itinerary ownership, and bookmark/review itinerary authorization. Future private CRUD and sharing endpoints are still separate work.
 
 Rate limits: Partial. Local usage guardrails cover generation, subscriber chat, vector, POI, routing, ticketing, and TTS operations. They are in-memory and not production-grade.
 
@@ -144,7 +146,7 @@ Must fix before public production:
 - Add secret manager/deployment environment integration.
 - Add deployment pipeline and rollback procedure.
 - Add migration backup/restore procedure and migration-state readiness check.
-- Complete ownership checks for private/user-owned resources.
+- Complete dedicated private itinerary CRUD/sharing flows and stage them against the managed auth provider.
 - Complete live provider gates, terms review, attribution/caching policy, and opt-in integration tests before enabling any real provider traffic.
 - Add dependency/security scanning.
 

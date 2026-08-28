@@ -7,7 +7,7 @@ this file.
 ## Required Offline Values
 
 ```text
-APP_ENV=<non-production-offline-env>
+APP_ENV=development
 PORT=<platform-port-placeholder>
 LOG_LEVEL=<platform-log-level-placeholder>
 CORS_ALLOWED_ORIGINS=<frontend-preview-origin-placeholder>
@@ -70,3 +70,7 @@ If any live provider credential is present, the rehearsal fails. If readiness
 shows any provider with `realEnabled=true`, `externalCallsAllowed=true`, or a
 non-mock mode, the rehearsal fails.
 
+This offline template intentionally uses `APP_ENV=development` because deployed
+environment names (`internal`, `beta`, `staging`, and `production`) now fail
+startup unless managed auth is configured. For any deployed-profile rehearsal,
+use placeholder-only managed JWT settings in deployment config.

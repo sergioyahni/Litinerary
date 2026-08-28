@@ -11,6 +11,7 @@ from app.api.routes import api_router
 from app.core.auth import validate_auth_startup
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.database_readiness import validate_database_startup
 from app.core.observability import (
     EventName,
     REQUEST_ID_HEADER,
@@ -22,6 +23,7 @@ from app.core.observability import (
     start_timer,
 )
 from app.core.readiness import readiness_payload
+from app.core.release import release_payload
 from app.services.mock_ai_service import validate_llm_startup
 from app.services.poi_verification import validate_poi_provider_startup
 from app.services.routing_service import validate_routing_startup
@@ -29,11 +31,13 @@ from app.services.ticketing_service import validate_ticketing_startup
 from app.services.affiliate_service import validate_affiliate_startup
 from app.services.narration_service import validate_tts_startup
 from app.services.provider_contracts import ProviderError, ProviderErrorCode
+from app.services.usage_policy import validate_usage_startup
 from app.services.vector_service import validate_vector_startup
 
 settings = get_settings()
 configure_logging()
 validate_auth_startup(settings)
+validate_database_startup(settings)
 validate_llm_startup(settings)
 validate_vector_startup(settings)
 validate_poi_provider_startup(settings)
@@ -41,6 +45,7 @@ validate_routing_startup(settings)
 validate_ticketing_startup(settings)
 validate_affiliate_startup(settings)
 validate_tts_startup(settings)
+validate_usage_startup(settings)
 
 app = FastAPI(
     title="Litinerary API",
@@ -78,8 +83,10 @@ async def request_logging_middleware(request: Request, call_next):
             category="api",
             method=request.method,
             path=request.url.path,
+            status_code=500,
             latency_ms=elapsed_ms(started_at),
             error_type=exc.__class__.__name__,
+            success=False,
         )
         raise
     finally:
@@ -115,6 +122,11 @@ def readiness_check(db: Session = Depends(get_db)) -> dict:
     return payload
 
 
+@app.get("/api/version", tags=["health"])
+def version_check() -> dict[str, str]:
+    return release_payload(settings=get_settings())
+
+
 @app.exception_handler(ProviderError)
 def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse:
     status_code = {
@@ -128,25 +140,31 @@ def provider_error_handler(request: Request, exc: ProviderError) -> JSONResponse
         ProviderErrorCode.EXTERNAL_CALL_BLOCKED: status.HTTP_503_SERVICE_UNAVAILABLE,
         ProviderErrorCode.REAL_PROVIDER_DISABLED: status.HTTP_503_SERVICE_UNAVAILABLE,
         ProviderErrorCode.NOT_CONFIGURED: status.HTTP_503_SERVICE_UNAVAILABLE,
+        ProviderErrorCode.UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
     }.get(exc.code, status.HTTP_502_BAD_GATEWAY)
     log_event(
         EventName.PROVIDER_CALL_FAILED,
         level=logging.WARNING,
         category="provider",
         path=request.url.path,
+        status_code=status_code,
         error_type=exc.code.value,
         provider_type=exc.metadata.provider_type if exc.metadata else None,
         provider_name=exc.metadata.provider_name if exc.metadata else None,
+        success=False,
     )
     settings = get_settings()
     detail = _safe_provider_error_detail(exc)
     headers = None
+    if exc.retry_after_seconds is not None:
+        headers = {"Retry-After": str(max(0, exc.retry_after_seconds))}
     if settings.app_env == "development":
         diagnostics = _provider_error_diagnostics(exc)
         if diagnostics:
             detail["diagnostics"] = diagnostics
             headers = {
-                "X-Litinerary-Provider-Diagnostics": _diagnostics_header(diagnostics)
+                **(headers or {}),
+                "X-Litinerary-Provider-Diagnostics": _diagnostics_header(diagnostics),
             }
     return JSONResponse(
         status_code=status_code,

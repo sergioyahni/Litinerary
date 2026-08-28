@@ -1,6 +1,10 @@
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -10,24 +14,34 @@ NETWORK_PREFLIGHT = REPO_ROOT / "scripts" / "live_llm_network_preflight.ps1"
 
 def _powershell_env() -> dict[str, str]:
     allowed = {}
-    for key in ("PATH", "Path", "SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"):
+    for key in ("PATH", "Path", "SystemRoot", "ComSpec", "PATHEXT", "HOME", "TEMP", "TMP", "TMPDIR"):
         if key in os.environ:
             allowed[key] = os.environ[key]
     return allowed
 
 
+def _powershell_command(script: Path, *args: str) -> list[str]:
+    executable = "powershell.exe" if sys.platform == "win32" else "pwsh"
+    if shutil.which(executable) is None:
+        pytest.skip(f"{executable} is required for PowerShell preflight tests")
+    command = [
+        executable,
+        "-NoProfile",
+    ]
+    if sys.platform == "win32":
+        command.extend(
+            [
+                "-ExecutionPolicy",
+                "Bypass",
+            ]
+        )
+    command.extend(["-File", str(script), *args])
+    return command
+
+
 def _run_preflight(env_file: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(PREFLIGHT),
-            "-EnvFile",
-            str(env_file),
-        ],
+        _powershell_command(PREFLIGHT, "-EnvFile", str(env_file)),
         cwd=REPO_ROOT,
         env=_powershell_env(),
         text=True,
@@ -38,20 +52,15 @@ def _run_preflight(env_file: Path) -> subprocess.CompletedProcess[str]:
 
 def _run_network_preflight(env_file: Path, host: str = "127.0.0.1") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(NETWORK_PREFLIGHT),
+        _powershell_command(
+            NETWORK_PREFLIGHT,
             "-EnvFile",
             str(env_file),
             "-HostOverride",
             host,
             "-TimeoutSeconds",
             "1",
-        ],
+        ),
         cwd=REPO_ROOT,
         env=_powershell_env(),
         text=True,

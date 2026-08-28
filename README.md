@@ -41,7 +41,7 @@ cd backend
 
 Local development uses SQLite by default at `backend/litinerary.db`. Override this with `LITINERARY_DATABASE_URL` when needed.
 
-The current schema includes forward-compatible fields for itinerary ownership/visibility, user auth-provider mapping, role/subscription status, provider provenance, POI verification state, source licensing/copyright safety, and future vector metadata (`embedding_records`). These fields are additive foundations only; real provider integrations and managed auth are still disabled by feature flags.
+The current schema includes enforced itinerary ownership/visibility fields, user auth-provider mapping, role/subscription status, provider provenance, POI verification state, source licensing/copyright safety, and future vector metadata (`embedding_records`). Public repository itineraries remain anonymous and ownerless; subscriber/private itineraries are owner-bound and hidden from other users. Real provider integrations and the hosted auth frontend flow are still disabled or placeholder-gated.
 
 ## Backend Environment Guardrails
 
@@ -56,7 +56,7 @@ Supported environment variables:
 - `ENABLE_MOCK_SERVICES`: allows fake/mock AI, vector, and POI verification services. Defaults to `true` outside production and `false` in production.
 - Real provider feature flags: `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS`. All default to `false`.
 - External-call safety: `ALLOW_EXTERNAL_CALLS=false` blocks live provider requests even if a real provider flag is accidentally enabled. This includes managed-auth JWKS/provider metadata lookups when `AUTH_PROVIDER` is not `dev`. `ENABLE_INTEGRATION_TESTS=false` keeps standard `APP_ENV=test` runs blocked. `ENABLE_STAGED_INTERNAL_LLM_TESTING=false` and `ENABLE_INTERNAL_ACCESS_GATE=false` keep `APP_ENV=internal` live LLM usage blocked unless explicitly approved later. `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS=production` means development and test runs cannot call live providers unless explicitly added for a deliberate integration test run.
-- Local usage guardrails: `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`, `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`, `ITINERARY_GENERATION_MAX_DAYS`, `LLM_MAX_INPUT_CHARS`, `LLM_MAX_OUTPUT_TOKENS`, `LLM_MAX_LIVE_CALLS_PER_REQUEST`, `LLM_DAILY_LIVE_REQUEST_CEILING`, `VECTOR_SEARCH_MAX_RESULTS`, `POI_VERIFICATION_MAX_BATCH_SIZE`, `ROUTING_MAX_STOPS`, `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`, and `PROVIDER_DAILY_COST_CEILING_USD`. These are mock/local controls, not durable billing.
+- Durable usage guardrails: `ENABLE_DURABLE_USAGE_CONTROLS`, `ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE`, `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE`, `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`, `SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE`, `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`, `PROVIDER_DAILY_REQUEST_CEILING`, `PROVIDER_DAILY_COST_CEILING_USD`, `USAGE_COUNTER_RETENTION_DAYS`, `ITINERARY_GENERATION_MAX_DAYS`, `LLM_MAX_INPUT_CHARS`, `LLM_MAX_OUTPUT_TOKENS`, `LLM_MAX_LIVE_CALLS_PER_REQUEST`, `LLM_DAILY_LIVE_REQUEST_CEILING`, `VECTOR_SEARCH_MAX_RESULTS`, `POI_VERIFICATION_MAX_BATCH_SIZE`, `ROUTING_MAX_STOPS`, and `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`. Deployed environments require durable DB-backed counters at startup; local development may use the in-memory fallback.
 - Auth flags: `ENABLE_AUTH`, `AUTH_PROVIDER`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_ALGORITHMS`, `AUTH_JWKS_URL`, `AUTH_PROVIDER_METADATA_URL`, claim mapping variables, `AUTH_REQUIRED_FOR_USER_FEATURES`, and `AUTH_ALLOW_DEV_USER_FALLBACK`.
 - `CORS_ALLOWED_ORIGINS`: comma-separated frontend origins. Local default is `http://localhost:5173,http://127.0.0.1:5173`; production default is empty and wildcard origins are ignored.
 - Provider placeholders: `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_NAME`, `LLM_BASE_URL`, `VECTOR_DB_PROVIDER`, `VECTOR_DB_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `POI_PROVIDER`, `POI_VERIFICATION_PROVIDER`, `POI_PROVIDER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `POI_VERIFICATION_API_KEY`, `ROUTING_PROVIDER`, `ROUTING_API_KEY`, `OPENROUTESERVICE_API_KEY`, `TICKETING_PROVIDER`, `TICKETING_API_KEY`.
@@ -80,7 +80,7 @@ cd ..\frontend
 npm test
 ```
 
-Limit and quota failures return provider-neutral error codes such as `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`; the frontend displays the safe backend message.
+Limit and quota failures return provider-neutral error codes such as `rate_limited`, `quota_exceeded`, `input_too_large`, `unsupported_batch_size`, `too_many_stops`, and `cost_limit_exceeded`; `429` responses include `Retry-After` when the failing window is known. The frontend displays the safe backend message and preserves retry-after seconds on `ApiError`.
 
 Future live integration tests must be opt-in and should set all of these intentionally for that run only:
 
@@ -97,10 +97,26 @@ Current auth foundation:
 - Auth is disabled by default, so anonymous destination/book browsing, public repository browsing, and basic public itinerary generation still work.
 - When `ENABLE_AUTH=true` and `AUTH_REQUIRED_FOR_USER_FEATURES=true`, user-specific endpoints require a bearer token.
 - Local/test development supports mock bearer tokens: `dev:<user_id>:<roles>:<subscription_status>`.
-- Managed JWT validation is available for non-`dev` providers using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`; JWKS/provider metadata retrieval is blocked unless `ALLOW_EXTERNAL_CALLS=true` and `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
+- Auth0 is the selected managed auth provider. The frontend uses `@auth0/auth0-vue` for SPA login, callback processing, session restoration, silent access-token acquisition, and logout.
+- Managed JWT validation is available for Auth0 through the provider-neutral backend contract using configured issuer, audience, algorithms, and either `AUTH_JWKS_URL` or `AUTH_PROVIDER_METADATA_URL`; JWKS/provider metadata retrieval is blocked unless `ALLOW_EXTERNAL_CALLS=true` and `APP_ENV` is listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
 - `GET /api/me` syncs the current authenticated subject to a local user profile.
 - Development fallback to `dev-reader` is allowed only in development/test when `AUTH_ALLOW_DEV_USER_FALLBACK=true`; beta/staging/production reject it.
-- Production must not use `AUTH_PROVIDER=dev`; configure and stage-test a managed provider before enabling production auth.
+- Deployed environments (`internal`, `beta`, `staging`, and `production`) fail startup unless auth is enabled with a managed provider label, issuer, audience, production JWT algorithms, JWKS or provider metadata, `AUTH_REQUIRED_FOR_USER_FEATURES=true`, `AUTH_ALLOW_DEV_USER_FALLBACK=false`, `ALLOW_EXTERNAL_CALLS=true`, and the current environment listed in `EXTERNAL_CALL_ALLOWED_ENVIRONMENTS`.
+- Production must not use `AUTH_PROVIDER=dev`; configure and stage-test a managed provider before production traffic.
+- Itinerary detail and narration are public for public repository rows and owner/admin-only for private or unlisted rows. Unauthorized private itinerary IDs return `404`, matching missing-resource behavior.
+
+Frontend Auth0 configuration:
+
+- `VITE_AUTH_PROVIDER=auth0`
+- `VITE_AUTH0_DOMAIN`
+- `VITE_AUTH0_CLIENT_ID`
+- `VITE_AUTH0_AUDIENCE`
+- `VITE_AUTH0_CALLBACK_URL`, normally `/auth/callback` on the frontend origin
+- `VITE_AUTH0_LOGOUT_RETURN_URL`
+- `VITE_AUTH0_USE_REFRESH_TOKENS=false` by default; the SDK uses in-memory token cache and Auth0 silent session checks.
+- `VITE_AUTH0_CACHE_LOCATION=memory` by default; use `localstorage` only after accepting the higher XSS persistence risk.
+
+Staging and production must use separate Auth0 tenants/apps, audiences, callback URLs, logout URLs, allowed web origins, and backend issuer/JWKS settings. The frontend obtains an Auth0 access token only when an SDK-authenticated session exists, attaches `Authorization: Bearer <access-token>` centrally through the API client, calls `/api/me`, and treats the returned backend profile as the Litinerary identity. Public anonymous endpoints continue without a bearer token. Deployed UI does not expose development-token login.
 
 Initialize the schema with Alembic:
 
@@ -179,7 +195,7 @@ Optional settings include `LLM_BASE_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS
 
 Before any real LLM transport call, grounding checks require safe source types, reject full-text metadata fields, block copyrighted full text, require source licensing/copyright context where relevant, and require POIs to have usable coordinates plus verification/provenance context. Judge validation returns structured reasons, warnings, confidence, and required fixes. Standard tests inject fake LLM transports and do not make network calls.
 
-Controlled non-production LLM smoke testing is allowed only with the gates above and with vector DB, POI, routing, ticketing, affiliate, TTS, and managed auth live-provider flags left disabled unless separately approved. Public or beta user-facing live LLM itinerary generation remains blocked pending production auth, durable rate/cost controls, provider observability, and staged POI/routing validation.
+Controlled non-production LLM smoke testing is allowed only with the gates above and with vector DB, POI, routing, ticketing, affiliate, TTS, and managed auth live-provider flags left disabled unless separately approved. Public or beta user-facing live LLM itinerary generation remains blocked pending provider observability, staged POI/routing validation, and an approved live-provider rollout plan.
 
 Live LLM operational documents:
 
@@ -298,7 +314,9 @@ Pytest artifacts are centralized under `tests/.artifacts/`:
 - `tests/.artifacts/logs/` stores pytest runtime logs and captured local smoke/backend logs.
 - `tests/.artifacts/reports/` stores JUnit XML and other machine-readable test reports.
 - `tests/.artifacts/coverage/` stores coverage.py data, XML, and HTML output.
-- `tests/.artifacts/tmp/` stores pytest basetemp directories and temporary test-run files.
+- `tests/.artifacts/pytest-cache/` stores pytest cache data.
+- `tests/.artifacts/pytest-tmp/` stores the normal pytest basetemp directory.
+- `tests/.artifacts/tmp/` is reserved for ad hoc harness-specific temporary files.
 
 The artifact tree is ignored by Git except for `.gitkeep` placeholders. To clean local artifacts, remove the contents of `tests/.artifacts/logs/`, `tests/.artifacts/reports/`, `tests/.artifacts/coverage/`, and `tests/.artifacts/tmp/` while leaving the `.gitkeep` files in place.
 
@@ -372,7 +390,7 @@ Security-sensitive limitations before production auth provider integration:
 - Admin/development routes are protected by environment/config guards and require authenticated admin/developer identity when auth is enabled.
 - Debug/mock recommendation routes are development-only and can be disabled with `ENABLE_DEBUG_ROUTES=false`.
 - Destructive seed reset/import routes are blocked in production mode.
-- Ownership/visibility fields exist and public repository endpoints hide non-public itineraries, but full private-itinerary ownership routes still require production auth integration.
+- Ownership/visibility checks are enforced server-side for itinerary detail/narration, subscriber private itinerary creation, user bookmark/review operations, and bookmark list filtering. Dedicated private itinerary CRUD and sharing/unlisted UI remain future work.
 
 Provider integration and production readiness docs:
 
@@ -384,16 +402,16 @@ Provider integration and production readiness docs:
 - Data is local mock data, not production content.
 - Itinerary generation is deterministic and mock-based.
 - Public repository persistence is SQLite-backed after database initialization and seeding; otherwise the Phase 1 in-memory mock fallback is used.
-- User accounts are a Phase 2 foundation identified locally by auth subject/user ID. A feature-flagged auth boundary and managed JWT validation exist, but there is no OAuth UI, password login, account recovery, or live provider configuration committed.
+- User accounts are backed by the verified auth subject returned through `/api/me`. The frontend has Auth0 SPA login/session/logout integration, but real Auth0 tenant/app values are not committed and real staging E2E remains blocked until external Auth0 resources are provisioned.
 - Vector search uses deterministic fake embeddings and an in-memory store by default. A gated Qdrant adapter boundary exists, but no real Vector DB is enabled without `ENABLE_REAL_VECTOR_DB=true`.
 - Map lines use day-level route geometry when available and straight-line mock geometry otherwise. Production route optimization, transit routing, and turn-by-turn UX remain future work.
 - Ticketing notes are static mock text, not live ticket inventory or booking links. The Google Places POI adapter may preserve a provider-supplied public place URL, but ticket inventory remains out of scope for the future ticketing adapter.
-- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. There is no connected managed authentication provider, e-commerce, affiliate, payment, or production ticketing integration.
+- Real LLM, Vector DB, POI, and routing adapter boundaries exist behind feature flags, but standard local flows still use fake/mock providers. Auth0 frontend integration exists with placeholder configuration only; e-commerce, affiliate, payment, and production ticketing integration are not connected.
 
 ## Future Implementation Phases
 
 - Replace mock data with ingestion-backed literary location data.
-- Add durable storage for public itineraries and user-owned saved routes.
+- Add dedicated user-owned itinerary save/edit/share flows on top of the existing ownership boundary.
 - Integrate vector search and personalization after the MVP flow is stable.
 - Add LLM generation and judge review with guardrails and deterministic test fixtures.
 - Add production routing, richer map behavior, and verified POI/ticketing data.

@@ -30,7 +30,31 @@ export const useUserStore = defineStore("user", () => {
   const hasBookmarks = computed(() => bookmarks.value.length > 0);
   const hasReviews = computed(() => reviews.value.length > 0);
 
+  async function ensureCurrentUser(): Promise<UserProfile | null> {
+    if (authStore.isAuthEnabled) {
+      if (!authStore.isAuthenticated) {
+        authStore.handleApiError(new Error("Sign in to continue."));
+        error.value = "Sign in to continue.";
+        return null;
+      }
+      if (authStore.currentUser) {
+        profile.value = authStore.currentUser;
+        return profile.value;
+      }
+      profile.value = await authStore.hydrateAuthenticatedUser();
+      if (!profile.value) {
+        error.value = authStore.error ?? "Sign in to continue.";
+      }
+      return profile.value;
+    }
+    return ensureDevelopmentUser();
+  }
+
   async function ensureDevelopmentUser(): Promise<UserProfile | null> {
+    if (!authStore.canLoginWithDevelopmentToken && !authStore.isAuthenticated) {
+      error.value = "Sign in to continue.";
+      return null;
+    }
     if (profile.value) {
       return profile.value;
     }
@@ -64,20 +88,24 @@ export const useUserStore = defineStore("user", () => {
     error.value = null;
 
     try {
-      profile.value = await fetchUser(userId.value);
+      if (authStore.isAuthEnabled) {
+        profile.value = authStore.currentUser ?? (await authStore.hydrateAuthenticatedUser());
+      } else {
+        profile.value = await fetchUser(userId.value);
+      }
     } catch (caught) {
       authStore.handleApiError(caught);
       error.value =
         caught instanceof Error
           ? caught.message
-          : "No development user exists yet. Create one to use account features.";
+          : "No user profile is available yet.";
     } finally {
       isLoading.value = false;
     }
   }
 
   async function savePreferences(value: Record<string, unknown>): Promise<boolean> {
-    const user = await ensureDevelopmentUser();
+    const user = await ensureCurrentUser();
     if (!user) return false;
 
     isLoading.value = true;
@@ -97,7 +125,7 @@ export const useUserStore = defineStore("user", () => {
   }
 
   async function loadBookmarks(): Promise<void> {
-    const user = await ensureDevelopmentUser();
+    const user = await ensureCurrentUser();
     if (!user) return;
 
     isLoading.value = true;
@@ -114,7 +142,7 @@ export const useUserStore = defineStore("user", () => {
   }
 
   async function toggleBookmark(itinerary: Itinerary): Promise<boolean> {
-    const user = await ensureDevelopmentUser();
+    const user = await ensureCurrentUser();
     if (!user) return false;
 
     isLoading.value = true;
@@ -146,7 +174,7 @@ export const useUserStore = defineStore("user", () => {
       return false;
     }
 
-    const user = await ensureDevelopmentUser();
+    const user = await ensureCurrentUser();
     if (!user) return false;
 
     isLoading.value = true;
@@ -194,6 +222,7 @@ export const useUserStore = defineStore("user", () => {
     hasBookmarks,
     hasReviews,
     ensureDevelopmentUser,
+    ensureCurrentUser,
     loadProfile,
     savePreferences,
     loadBookmarks,

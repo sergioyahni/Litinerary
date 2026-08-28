@@ -2,12 +2,18 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import {
   AUTH_RUNTIME_CONFIG,
+  auth0ConfigurationErrors,
+  canUseDevelopmentLogin,
   getAuthSession,
+  hydrateAuth0User,
   loginWithDevelopmentSubscriberToken,
   loginWithDevelopmentToken,
+  loginWithAuth0,
   logout as logoutSession,
   refreshCurrentUserSession,
-  setManagedAuthSession,
+  restoreAuth0Session,
+  setManagedAuthSessionFromToken,
+  usesAuth0,
   type AuthSession,
 } from "../services/authService";
 import { ApiError } from "../services/apiClient";
@@ -18,8 +24,12 @@ export const useAuthStore = defineStore("auth", () => {
   const currentUser = ref<UserProfile | null>(null);
   const error = ref<string | null>(null);
   const lastAuthStatus = ref<401 | 403 | null>(null);
+  const isInitializing = ref(false);
 
   const isAuthEnabled = computed(() => AUTH_RUNTIME_CONFIG.enabled);
+  const isAuth0Enabled = computed(() => usesAuth0());
+  const isAuth0Configured = computed(() => auth0ConfigurationErrors().length === 0);
+  const canLoginWithDevelopmentToken = computed(() => canUseDevelopmentLogin());
   const isAuthenticated = computed(() => session.value !== null);
   const currentUserId = computed(() => session.value?.userId ?? null);
   const isAdmin = computed(() => session.value?.roles.includes("admin") ?? false);
@@ -59,7 +69,7 @@ export const useAuthStore = defineStore("auth", () => {
   async function acceptManagedToken(token: string): Promise<boolean> {
     error.value = null;
     try {
-      session.value = setManagedAuthSession(token);
+      session.value = setManagedAuthSessionFromToken(token);
       const refreshed = await refreshCurrentUserSession();
       session.value = refreshed.session;
       currentUser.value = refreshed.profile;
@@ -70,6 +80,67 @@ export const useAuthStore = defineStore("auth", () => {
       currentUser.value = null;
       handleApiError(caught);
       return false;
+    }
+  }
+
+  async function login(target?: string): Promise<boolean> {
+    error.value = null;
+    try {
+      if (usesAuth0()) {
+        await loginWithAuth0(target);
+        return true;
+      }
+      await loginDevelopmentUser();
+      return true;
+    } catch (caught) {
+      error.value = caught instanceof Error ? caught.message : "Unable to start sign in.";
+      return false;
+    }
+  }
+
+  async function restoreSession(): Promise<UserProfile | null> {
+    if (!usesAuth0()) {
+      return null;
+    }
+    isInitializing.value = true;
+    error.value = null;
+    try {
+      const restored = await restoreAuth0Session();
+      session.value = restored.session;
+      currentUser.value = restored.profile;
+      lastAuthStatus.value = null;
+      return restored.profile;
+    } catch (caught) {
+      session.value = null;
+      currentUser.value = null;
+      error.value = friendlyAuth0Error(caught);
+      return null;
+    } finally {
+      isInitializing.value = false;
+    }
+  }
+
+  async function hydrateAuthenticatedUser(): Promise<UserProfile | null> {
+    if (!usesAuth0()) {
+      return loadCurrentUser();
+    }
+    isInitializing.value = true;
+    error.value = null;
+    try {
+      const hydrated = await hydrateAuth0User();
+      session.value = hydrated.session;
+      currentUser.value = hydrated.profile;
+      lastAuthStatus.value = null;
+      return hydrated.profile;
+    } catch (caught) {
+      handleApiError(caught);
+      if (caught instanceof ApiError && caught.isUnauthorized) {
+        session.value = null;
+        currentUser.value = null;
+      }
+      return null;
+    } finally {
+      isInitializing.value = false;
     }
   }
 
@@ -102,6 +173,10 @@ export const useAuthStore = defineStore("auth", () => {
   function handleApiError(caught: unknown): void {
     if (caught instanceof ApiError && (caught.isUnauthorized || caught.isForbidden)) {
       lastAuthStatus.value = caught.status as 401 | 403;
+      if (caught.isUnauthorized) {
+        session.value = null;
+        currentUser.value = null;
+      }
       error.value =
         caught.status === 401
           ? "Sign in to continue."
@@ -111,16 +186,31 @@ export const useAuthStore = defineStore("auth", () => {
     error.value = caught instanceof Error ? caught.message : "Request failed.";
   }
 
+  function friendlyAuth0Error(caught: unknown): string {
+    const message = caught instanceof Error ? caught.message : "Authentication session could not be restored.";
+    if (message.includes("Auth0 frontend configuration is incomplete")) {
+      return message;
+    }
+    return "Sign in to continue.";
+  }
+
   return {
     session,
     currentUser,
     error,
     lastAuthStatus,
+    isInitializing,
     isAuthEnabled,
+    isAuth0Enabled,
+    isAuth0Configured,
+    canLoginWithDevelopmentToken,
     isAuthenticated,
     currentUserId,
     isAdmin,
     isSubscriber,
+    login,
+    restoreSession,
+    hydrateAuthenticatedUser,
     loginDevelopmentUser,
     loginDevelopmentSubscriber,
     acceptManagedToken,

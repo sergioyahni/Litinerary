@@ -46,6 +46,17 @@ describe("authStore", () => {
     expect(store.error).toBe("You do not have permission to perform this action.");
   });
 
+  it("clears stale sessions on 401 without clearing valid sessions on 403", async () => {
+    const store = useAuthStore();
+    await store.loginDevelopmentUser("dev-reader");
+
+    store.handleApiError(new ApiError(403, "Forbidden"));
+    expect(store.isAuthenticated).toBe(true);
+
+    store.handleApiError(new ApiError(401, "Authentication required"));
+    expect(store.isAuthenticated).toBe(false);
+  });
+
   it("accepts a managed token and syncs the current user profile", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ Authorization: "Bearer managed.jwt.token" });

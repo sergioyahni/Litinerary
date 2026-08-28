@@ -52,6 +52,9 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+*.backup
+*.dump
+*.pgdump
 backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
@@ -78,5 +81,7 @@ desktop.ini
 frontend/.vite/
 
 # Pytest and test-run artifacts
-tests/.artifacts/*
+tests/.artifacts/**
+!tests/.artifacts/
 !tests/.artifacts/.gitkeep
+backend/tests/.artifacts/**

@@ -2,7 +2,7 @@
   <section class="page-banner">
     <div class="container">
       <h1>Itinerary Detail</h1>
-      <p>Review a public repository route and its text alternative to the map.</p>
+      <p>Review an accessible route and its text alternative to the map.</p>
     </div>
   </section>
 

@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
 from app.services.seed_manager import export_seed_data
 
@@ -10,7 +11,8 @@ def main() -> None:
     parser.add_argument("path", help="Output JSON path.")
     args = parser.parse_args()
 
-    init_db()
+    if not get_settings().is_deployed_environment:
+        init_db()
     with SessionLocal() as db:
         payload = export_seed_data(db)
 

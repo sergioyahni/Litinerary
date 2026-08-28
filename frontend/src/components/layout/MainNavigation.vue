@@ -25,6 +25,5 @@ const navItems = [
   { label: "Public Repository", name: "itinerary-repository" },
   { label: "Profile", name: "user-profile" },
   { label: "Bookmarks", name: "user-bookmarks" },
-  { label: "Subscriber Chat", name: "subscriber-chat" },
 ];
 </script>

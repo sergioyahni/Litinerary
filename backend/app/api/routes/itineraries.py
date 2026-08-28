@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.auth import CurrentUser, optional_current_user
 from app.core.database import get_db
 from app.core.observability import EventName, log_event
 from app.schemas.domain import (
@@ -29,6 +30,7 @@ router = APIRouter(tags=["itineraries"])
 )
 def post_generate_itinerary(
     request: ItineraryGenerationRequest,
+    current_user: CurrentUser | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ) -> ItineraryGenerationResponse:
     log_event(
@@ -40,7 +42,13 @@ def post_generate_itinerary(
         transportation_mode=request.transportationMode,
     )
     try:
-        response = generate_itinerary(request, db=db)
+        response = generate_itinerary(
+            request,
+            db=db,
+            user_id=current_user.id
+            if current_user is not None and not current_user.is_development_fallback
+            else None,
+        )
     except Exception as exc:
         log_event(
             EventName.ITINERARY_GENERATION_FAILED,
@@ -89,9 +97,10 @@ def get_itineraries(
 @router.get("/api/itineraries/{itinerary_id}", response_model=Itinerary)
 def get_itinerary_by_id(
     itinerary_id: str,
+    current_user: CurrentUser | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ) -> Itinerary:
-    return get_itinerary(itinerary_id, db=db)
+    return get_itinerary(itinerary_id, db=db, current_user=current_user)
 
 
 @router.post(
@@ -101,9 +110,10 @@ def get_itinerary_by_id(
 def post_itinerary_narration(
     itinerary_id: str,
     request: NarrationRequest,
+    current_user: CurrentUser | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ) -> ItineraryNarrationResponse:
-    itinerary = get_itinerary(itinerary_id, db=db)
+    itinerary = get_itinerary(itinerary_id, db=db, current_user=current_user)
     return build_itinerary_narration(itinerary, request)
 
 
@@ -113,7 +123,8 @@ def post_itinerary_narration(
 )
 def get_itinerary_narration(
     itinerary_id: str,
+    current_user: CurrentUser | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
 ) -> ItineraryNarrationResponse:
-    itinerary = get_itinerary(itinerary_id, db=db)
+    itinerary = get_itinerary(itinerary_id, db=db, current_user=current_user)
     return build_itinerary_narration(itinerary)

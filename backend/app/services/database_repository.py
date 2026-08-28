@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.auth import CurrentUser
 from app.data.mock_data import BOOKS, DESTINATIONS, ITINERARIES
 from app.models import (
     BookModel,
@@ -10,8 +11,13 @@ from app.models import (
     ItineraryModel,
     ItineraryStopModel,
     POIModel,
+    UserModel,
 )
 from app.schemas.domain import Book, Destination, Itinerary, ItineraryDay, ItineraryStop, POI
+
+
+class ItineraryPersistenceError(ValueError):
+    """Raised when an itinerary cannot be saved without losing relational integrity."""
 
 
 def database_has_seed_data(db: Session) -> bool:
@@ -137,15 +143,140 @@ def get_itinerary(db: Session, itinerary_id: str) -> Itinerary | None:
     return itinerary_from_model(row) if row else None
 
 
-def save_itinerary(db: Session, itinerary: Itinerary) -> None:
-    existing = db.get(ItineraryModel, itinerary.id)
-    if existing is not None:
-        db.delete(existing)
-        db.flush()
+def get_accessible_itinerary(
+    db: Session,
+    itinerary_id: str,
+    current_user: CurrentUser | None = None,
+) -> Itinerary | None:
+    row = get_accessible_itinerary_model(db, itinerary_id, current_user=current_user)
+    return itinerary_from_model(row) if row else None
 
-    model = itinerary_to_model(db, itinerary)
-    db.add(model)
+
+def get_accessible_itinerary_model(
+    db: Session,
+    itinerary_id: str,
+    current_user: CurrentUser | None = None,
+) -> ItineraryModel | None:
+    row = db.scalars(
+        select(ItineraryModel)
+        .where(ItineraryModel.id == itinerary_id)
+        .options(_itinerary_load_options())
+    ).first()
+    if row is None or not itinerary_row_is_accessible(row, current_user=current_user):
+        return None
+    return row
+
+
+def itinerary_row_is_accessible(
+    row: ItineraryModel,
+    current_user: CurrentUser | None = None,
+) -> bool:
+    if itinerary_row_is_public_repository(row):
+        return True
+    if current_user is None:
+        return False
+    return current_user.is_admin or row.owner_user_id == current_user.id
+
+
+def itinerary_is_accessible(
+    itinerary: Itinerary,
+    current_user: CurrentUser | None = None,
+) -> bool:
+    if itinerary.isPublic and itinerary.visibility == "public":
+        return True
+    if current_user is None:
+        return False
+    return current_user.is_admin or itinerary.ownerUserId == current_user.id
+
+
+def itinerary_row_is_public_repository(row: ItineraryModel) -> bool:
+    return row.is_public and row.visibility == "public"
+
+
+def save_itinerary(db: Session, itinerary: Itinerary) -> None:
+    try:
+        validate_itinerary_access_invariants(db, itinerary)
+        validate_itinerary_persistence_references(db, itinerary)
+        existing = db.get(ItineraryModel, itinerary.id)
+        if existing is not None:
+            db.delete(existing)
+            db.flush()
+
+        model = itinerary_to_model(db, itinerary)
+        db.add(model)
+        db.flush()
+    except Exception:
+        db.rollback()
+        raise
     db.commit()
+
+
+def validate_itinerary_access_invariants(db: Session, itinerary: Itinerary) -> None:
+    if itinerary.visibility == "public" and not itinerary.isPublic:
+        raise ValueError("Public itinerary visibility requires isPublic=true.")
+    if itinerary.visibility != "public" and itinerary.isPublic:
+        raise ValueError("Private or unlisted itinerary visibility requires isPublic=false.")
+    if itinerary.subscriberOnly and (
+        itinerary.visibility != "private" or itinerary.isPublic or not itinerary.ownerUserId
+    ):
+        raise ValueError("Subscriber-only itineraries must be private and owner-bound.")
+    if itinerary.ownerUserId and db.get(UserModel, itinerary.ownerUserId) is None:
+        raise ValueError(f"Unknown itinerary owner: {itinerary.ownerUserId}")
+
+
+def validate_itinerary_persistence_references(db: Session, itinerary: Itinerary) -> None:
+    errors: list[str] = []
+    if db.get(DestinationModel, itinerary.destinationId) is None:
+        errors.append(f"Unknown itinerary destination: {itinerary.destinationId}")
+    book = db.scalars(
+        select(BookModel)
+        .where(BookModel.id == itinerary.bookId)
+        .options(selectinload(BookModel.destinations))
+    ).first()
+    if book is None:
+        errors.append(f"Unknown itinerary book: {itinerary.bookId}")
+    elif itinerary.destinationId not in {destination.id for destination in book.destinations}:
+        errors.append(
+            f"Itinerary book '{itinerary.bookId}' is not linked to destination "
+            f"'{itinerary.destinationId}'."
+        )
+
+    missing_poi_ids: list[str] = []
+    wrong_destination_ids: list[str] = []
+    wrong_book_ids: list[str] = []
+    for day in itinerary.days:
+        for stop in day.stops:
+            poi = db.scalars(
+                select(POIModel)
+                .where(POIModel.id == stop.poi.id)
+                .options(selectinload(POIModel.books))
+            ).first()
+            if poi is None:
+                missing_poi_ids.append(stop.poi.id)
+                continue
+            if poi.destination_id != itinerary.destinationId:
+                wrong_destination_ids.append(stop.poi.id)
+            if itinerary.bookId not in {book.id for book in poi.books}:
+                wrong_book_ids.append(stop.poi.id)
+
+    if missing_poi_ids:
+        errors.append(
+            "Itinerary references unknown POI(s): " + ", ".join(sorted(set(missing_poi_ids)))
+        )
+    if wrong_destination_ids:
+        errors.append(
+            "Itinerary references POI(s) outside destination "
+            f"'{itinerary.destinationId}': "
+            + ", ".join(sorted(set(wrong_destination_ids)))
+        )
+    if wrong_book_ids:
+        errors.append(
+            "Itinerary references POI(s) not linked to book "
+            f"'{itinerary.bookId}': "
+            + ", ".join(sorted(set(wrong_book_ids)))
+        )
+    if errors:
+        raise ItineraryPersistenceError(" ".join(errors))
 
 
 def destination_from_model(row: DestinationModel) -> Destination:
@@ -317,7 +448,6 @@ def itinerary_to_model(db: Session, itinerary: Itinerary) -> ItineraryModel:
                         estimated_end_time=stop.estimatedEndTime,
                     )
                     for stop in day.stops
-                    if db.get(POIModel, stop.poi.id) is not None
                 ],
             )
             for day in itinerary.days

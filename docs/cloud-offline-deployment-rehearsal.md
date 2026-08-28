@@ -113,7 +113,7 @@ Fail the rehearsal before deployment if the target cannot provide:
 Cloud offline rehearsal must use:
 
 ```text
-APP_ENV=staging
+APP_ENV=development
 ENABLE_REAL_LLM=false
 ALLOW_EXTERNAL_CALLS=false
 ENABLE_STAGED_INTERNAL_LLM_TESTING=false
@@ -140,6 +140,11 @@ ENABLE_AUTH=false
 AUTH_PROVIDER=dev
 AUTH_ALLOW_DEV_USER_FALLBACK=false
 ```
+
+This auth-disabled offline rehearsal profile uses `APP_ENV=development`.
+`internal`, `beta`, `staging`, and `production` now fail startup unless managed
+JWT auth is configured with a non-`dev` provider, issuer, audience, production
+algorithms, and JWKS or provider metadata.
 
 Use a cloud database URL from secure cloud configuration only. Do not commit it.
 

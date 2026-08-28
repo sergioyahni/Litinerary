@@ -60,13 +60,14 @@ Do not set these in standard unit, API, frontend, or smoke test commands.
 
 ## Rate, Quota, and Cost Guardrails
 
-Provider-like operations also pass through local usage policy helpers in `backend/app/services/usage_policy.py`. This is a mock/local foundation, not billing or production-grade metering. It records provider type, operation type, request count, estimated token usage, estimated cost, user ID or anonymous session key, timestamp, provider metadata, and whether the request was allowed or blocked.
+Provider-like operations pass through usage policy helpers in `backend/app/services/usage_policy.py`. Local development may use an in-memory fallback, while deployed environments must enable DB-backed durable counters with `ENABLE_DURABLE_USAGE_CONTROLS=true`. Counters are keyed by subject, action, and UTC window, and safe telemetry records provider type, operation type, request count, estimated token usage, estimated cost, user ID or anonymous session key, timestamp, and allow/block outcome without storing prompts, raw provider payloads, or secrets.
 
 Current guarded operations:
 
 - Itinerary generation.
 - Subscriber chat messages and chat itinerary refinement.
 - LLM completion input/output size.
+- Live LLM completion request budget.
 - Vector search and upsert.
 - POI verification.
 - Routing calculation.
@@ -76,17 +77,23 @@ Current guarded operations:
 Configurable limits live in `backend/app/core/config.py` and `.env.example`:
 
 - `ANONYMOUS_ITINERARY_GENERATIONS_PER_DAY`
+- `ANONYMOUS_ITINERARY_GENERATIONS_PER_MINUTE`
 - `REGISTERED_USER_ITINERARY_GENERATIONS_PER_DAY`
+- `REGISTERED_USER_ITINERARY_GENERATIONS_PER_MINUTE`
 - `SUBSCRIBER_CHAT_MESSAGES_PER_DAY`
+- `SUBSCRIBER_CHAT_MESSAGES_PER_MINUTE`
+- `ENABLE_DURABLE_USAGE_CONTROLS`
 - `LLM_MAX_INPUT_CHARS`
 - `LLM_MAX_OUTPUT_TOKENS`
 - `VECTOR_SEARCH_MAX_RESULTS`
 - `POI_VERIFICATION_MAX_BATCH_SIZE`
 - `ROUTING_MAX_STOPS`
 - `TICKETING_LOOKUP_MAX_REQUESTS_PER_ITINERARY`
+- `PROVIDER_DAILY_REQUEST_CEILING`
 - `PROVIDER_DAILY_COST_CEILING_USD`
+- `USAGE_COUNTER_RETENTION_DAYS`
 
-Default persistence is in-memory and deterministic for tests. Production must replace it with durable per-user/session metering before enabling real provider traffic. The cost ceiling defaults to `0`, so any future positive-cost operation must explicitly configure a nonzero ceiling before it can pass.
+The durable store uses the application database table `usage_limit_counters`. Reservation updates are conditional and atomic per counter row, so concurrent requests cannot exceed the configured window. If the durable limiter backing store is unavailable, cost-sensitive work fails closed with `503`. Rate/quota failures return `429` and include `Retry-After` when the backend knows the failing window. The cost ceiling defaults to `0`, so any positive-cost operation must explicitly configure a nonzero ceiling before it can pass.
 
 ## Standard Metadata
 

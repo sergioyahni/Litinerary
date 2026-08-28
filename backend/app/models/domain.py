@@ -1,4 +1,16 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, JSON, String, Table, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -120,6 +132,10 @@ class POIModel(Base):
 
 class ItineraryModel(Base):
     __tablename__ = "itineraries"
+    __table_args__ = (
+        Index("ix_itineraries_public_visibility", "is_public", "visibility"),
+        Index("ix_itineraries_owner_visibility", "owner_user_id", "visibility"),
+    )
 
     id: Mapped[str] = mapped_column(String(180), primary_key=True)
     destination_id: Mapped[str] = mapped_column(ForeignKey("destinations.id"), nullable=False)
@@ -129,7 +145,9 @@ class ItineraryModel(Base):
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
     transportation_mode: Mapped[str] = mapped_column(String(40), nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    owner_user_id: Mapped[str | None] = mapped_column(String(120))
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
     visibility: Mapped[str] = mapped_column(String(40), default="public", nullable=False)
     generated_from: Mapped[str] = mapped_column(String(40), nullable=False)
     source_type: Mapped[str | None] = mapped_column(String(60))
@@ -158,6 +176,10 @@ class ItineraryModel(Base):
     bookmarked_by: Mapped[list["UserModel"]] = relationship(
         secondary=user_bookmarks,
         back_populates="bookmarked_itineraries",
+    )
+    owner: Mapped["UserModel | None"] = relationship(
+        back_populates="owned_itineraries",
+        foreign_keys=[owner_user_id],
     )
 
 
@@ -224,6 +246,11 @@ class UserModel(Base):
     bookmarked_itineraries: Mapped[list[ItineraryModel]] = relationship(
         secondary=user_bookmarks,
         back_populates="bookmarked_by",
+    )
+    owned_itineraries: Mapped[list[ItineraryModel]] = relationship(
+        back_populates="owner",
+        foreign_keys="ItineraryModel.owner_user_id",
+        passive_deletes=True,
     )
     chat_sessions: Mapped[list["ChatSessionModel"]] = relationship(
         back_populates="user",
@@ -424,3 +451,29 @@ class EmbeddingRecordModel(Base):
     last_embedded_at: Mapped[str | None] = mapped_column(String(80))
     metadata_version: Mapped[str] = mapped_column(String(40), default="1", nullable=False)
     provenance_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class UsageLimitCounterModel(Base):
+    __tablename__ = "usage_limit_counters"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_type",
+            "subject_key",
+            "action",
+            "window_start",
+            name="uq_usage_limit_counter_window",
+        ),
+        Index("ix_usage_limit_counters_subject_action", "subject_type", "subject_key", "action"),
+        Index("ix_usage_limit_counters_window_end", "window_end"),
+    )
+
+    id: Mapped[str] = mapped_column(String(240), primary_key=True)
+    subject_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject_key: Mapped[str] = mapped_column(String(180), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    window_start: Mapped[str] = mapped_column(String(40), nullable=False)
+    window_end: Mapped[str] = mapped_column(String(40), nullable=False)
+    units_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    limit_units: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(80), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(80), nullable=False)

@@ -145,7 +145,7 @@ $templatePath = Join-Path $docs "cloud-offline-env-render.template.md"
 $templateText = Get-Content -LiteralPath $templatePath -Raw
 
 foreach ($required in @(
-  "APP_ENV=<non-production-offline-env>",
+  "APP_ENV=development",
   "ENABLE_REAL_LLM=false",
   "ALLOW_EXTERNAL_CALLS=false",
   "ENABLE_STAGED_INTERNAL_LLM_TESTING=false",
