@@ -109,8 +109,9 @@ def validate_database_startup(settings: Settings | None = None) -> None:
     if not resolved.is_deployed_environment:
         return
 
-    connect_args = {"check_same_thread": False} if resolved.database_url.startswith("sqlite") else {}
-    engine = create_engine(resolved.database_url, connect_args=connect_args)
+    database_url = resolved.effective_database_url
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    engine = create_engine(database_url, connect_args=connect_args)
     try:
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         with SessionLocal() as db:

@@ -4,6 +4,7 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.core.config import normalize_database_url
 from app.core.database import Base
 from app.models import domain  # noqa: F401
 
@@ -17,10 +18,11 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    return os.getenv(
+    database_url = os.getenv(
         "LITINERARY_DATABASE_URL",
         config.get_main_option("sqlalchemy.url", "sqlite:///./litinerary.db"),
     )
+    return normalize_database_url(database_url)
 
 
 def run_migrations_offline() -> None:
