@@ -7,8 +7,13 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
+
+
+TRANSIENT_RELEASE_HTTP_STATUSES = {500, 502, 503, 504}
+TRANSIENT_URL_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, OSError)
 
 
 def main() -> int:
@@ -80,12 +85,20 @@ def main() -> int:
 
 
 def request_json(url: str) -> Any:
-    request = urllib.request.Request(url, headers={"User-Agent": "litinerary-ci-smoke"})
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+        return _read_json(url)
     except urllib.error.HTTPError as exc:
-        raise SystemExit(f"Request failed: {url} status={exc.code}") from exc
+        raise SystemExit(f"Request failed: {_safe_url(url)} status={exc.code}") from exc
+    except TRANSIENT_URL_ERRORS as exc:
+        raise SystemExit(
+            f"Request failed: {_safe_url(url)} error={exc.__class__.__name__}"
+        ) from exc
+
+
+def _read_json(url: str) -> Any:
+    request = urllib.request.Request(url, headers={"User-Agent": "litinerary-ci-smoke"})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def request_text(url: str) -> str:
@@ -94,7 +107,11 @@ def request_text(url: str) -> str:
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        raise SystemExit(f"Request failed: {url} status={exc.code}") from exc
+        raise SystemExit(f"Request failed: {_safe_url(url)} status={exc.code}") from exc
+    except TRANSIENT_URL_ERRORS as exc:
+        raise SystemExit(
+            f"Request failed: {_safe_url(url)} error={exc.__class__.__name__}"
+        ) from exc
 
 
 def wait_for_release(
@@ -110,10 +127,8 @@ def wait_for_release(
     last_backend = "unknown"
     last_frontend = "unknown"
     while time.monotonic() <= deadline:
-        backend_version = request_json(f"{backend_url}/api/version")
-        frontend_version = request_json(f"{frontend_url}/release.json")
-        last_backend = str(backend_version.get("releaseSha", "unknown")).lower()
-        last_frontend = str(frontend_version.get("releaseSha", "unknown")).lower()
+        _, last_backend = _request_release_json(f"{backend_url}/api/version")
+        _, last_frontend = _request_release_json(f"{frontend_url}/release.json")
         if last_backend == expected and last_frontend == expected:
             return {
                 "backendReleaseSha": last_backend,
@@ -124,6 +139,39 @@ def wait_for_release(
         "Timed out waiting for release SHA. "
         f"expected={expected} backend={last_backend} frontend={last_frontend}"
     )
+
+
+def _request_release_json(url: str) -> tuple[Any | None, str]:
+    try:
+        body = _read_json(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code in TRANSIENT_RELEASE_HTTP_STATUSES:
+            return None, f"http_status={exc.code}"
+        raise SystemExit(f"Request failed: {_safe_url(url)} status={exc.code}") from exc
+    except TRANSIENT_URL_ERRORS as exc:
+        return None, f"network_error={exc.__class__.__name__}"
+
+    if not isinstance(body, dict):
+        return body, "missing_release_sha"
+    return body, str(body.get("releaseSha", "unknown")).lower()
+
+
+def _safe_url(url: str) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "[redacted-url]"
+
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        return "[redacted-url]"
+    if port is not None:
+        host = f"{host}:{port}"
+    if not host:
+        return "[redacted-url]"
+    return urllib.parse.urlunsplit((parsed.scheme, host, parsed.path, "", ""))
 
 
 def validate_frontend(frontend_url: str) -> None:
