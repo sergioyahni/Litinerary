@@ -137,6 +137,10 @@ class Settings(BaseModel):
     def is_standard_test_mode(self) -> bool:
         return self.app_env == "test" and not self.enable_integration_tests
 
+    @property
+    def effective_database_url(self) -> str:
+        return normalize_database_url(self.database_url)
+
     def deployed_auth_validation_errors(self) -> list[str]:
         if not self.is_deployed_environment:
             return []
@@ -386,7 +390,7 @@ class Settings(BaseModel):
     def database_configuration_validation_errors(self) -> list[str]:
         errors: list[str] = []
         try:
-            parsed = make_url(self.database_url)
+            parsed = make_url(self.effective_database_url)
         except (ArgumentError, ValueError):
             return ["LITINERARY_DATABASE_URL is malformed or unsupported."]
 
@@ -406,7 +410,7 @@ class Settings(BaseModel):
 
     def safe_database_dialect(self) -> str:
         try:
-            return make_url(self.database_url).drivername
+            return make_url(self.effective_database_url).drivername
         except (ArgumentError, ValueError):
             return "invalid"
 
@@ -597,6 +601,20 @@ def database_path_from_url(database_url: str) -> Path | None:
     if not database_url.startswith("sqlite:///"):
         return None
     return Path(database_url.replace("sqlite:///", "", 1))
+
+
+def normalize_database_url(database_url: str) -> str:
+    try:
+        parsed = make_url(database_url)
+    except (ArgumentError, TypeError, ValueError):
+        return database_url
+
+    if parsed.drivername.lower() in {"postgres", "postgresql"}:
+        return parsed.set(drivername="postgresql+psycopg").render_as_string(
+            hide_password=False
+        )
+
+    return database_url
 
 
 def _normalized_app_env(value: str) -> str:

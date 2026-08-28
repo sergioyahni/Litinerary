@@ -3,11 +3,12 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, engine_from_config, make_url, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core import database as database_module
-from app.core.config import Settings
+from app.core.config import Settings, normalize_database_url
 from app.core.database import Base
 from app.core.database_readiness import (
     database_readiness_status,
@@ -71,6 +72,71 @@ def test_malformed_database_url_is_rejected_without_echoing_value() -> None:
 
     assert errors == ["LITINERARY_DATABASE_URL is malformed or unsupported."]
     assert "super-secret" not in " ".join(errors)
+
+
+def test_provider_standard_postgresql_url_uses_psycopg_driver() -> None:
+    settings = Settings(
+        app_env="production",
+        database_url="postgresql://user:password@db.example.test:5432/litinerary",
+        database_url_configured=True,
+    )
+
+    assert settings.safe_database_dialect() == "postgresql+psycopg"
+    assert settings.effective_database_url.startswith("postgresql+psycopg://")
+
+
+def test_legacy_postgres_url_uses_psycopg_driver() -> None:
+    normalized = normalize_database_url(
+        "postgres://user:password@db.example.test:5432/litinerary"
+    )
+
+    assert normalized.startswith("postgresql+psycopg://")
+
+
+def test_explicit_psycopg_database_url_is_preserved() -> None:
+    database_url = "postgresql+psycopg://user:password@db.example.test/litinerary"
+
+    assert normalize_database_url(database_url) == database_url
+
+
+def test_sqlite_database_url_is_preserved() -> None:
+    database_url = "sqlite:///./litinerary.db"
+
+    assert normalize_database_url(database_url) == database_url
+
+
+def test_postgresql_normalization_preserves_credentials_and_query_parameters() -> None:
+    password = "password"
+    normalized = normalize_database_url(
+        "postgresql://user:password@db.example.test:6543/litinerary"
+        "?sslmode=require&connect_timeout=10"
+    )
+    parsed = make_url(normalized)
+
+    assert parsed.drivername == "postgresql+psycopg"
+    assert parsed.username == "user"
+    assert parsed.password == password
+    assert parsed.host == "db.example.test"
+    assert parsed.port == 6543
+    assert parsed.database == "litinerary"
+    assert parsed.query == {"sslmode": "require", "connect_timeout": "10"}
+
+
+def test_alembic_engine_configuration_constructs_psycopg_dialect() -> None:
+    engine = engine_from_config(
+        {
+            "sqlalchemy.url": normalize_database_url(
+                "postgresql://user:password@db.example.test/litinerary"
+            )
+        },
+        prefix="sqlalchemy.",
+        poolclass=NullPool,
+    )
+    try:
+        assert engine.dialect.name == "postgresql"
+        assert engine.dialect.driver == "psycopg"
+    finally:
+        engine.dispose()
 
 
 def test_representative_valid_deployed_database_config_passes_without_connecting() -> None:

@@ -17,9 +17,10 @@ if configuration_errors:
         f"Database configuration is incomplete for APP_ENV={settings.app_env}: "
         + " ".join(configuration_errors)
     )
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+database_url = settings.effective_database_url
+connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
 
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
