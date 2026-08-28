@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 from alembic import command
@@ -6,6 +7,42 @@ from sqlalchemy import create_engine, inspect, text
 
 from app.models import BookModel, DestinationModel, ItineraryModel, POIModel
 from app.services.seed import seed_database
+
+
+def test_itinerary_ownership_migration_uses_portable_boolean_literal(monkeypatch) -> None:
+    migration = importlib.import_module(
+        "migrations.versions.20260815_0008_itinerary_owner_constraints"
+    )
+    statements: list[str] = []
+
+    class BatchAlterTableStub:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def create_foreign_key(self, *args, **kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(migration.op, "execute", lambda statement: statements.append(statement))
+    monkeypatch.setattr(
+        migration.op,
+        "batch_alter_table",
+        lambda *args, **kwargs: BatchAlterTableStub(),
+    )
+    monkeypatch.setattr(migration.op, "create_index", lambda *args, **kwargs: None)
+
+    migration.upgrade()
+
+    boolean_updates = [
+        statement
+        for statement in statements
+        if "UPDATE itineraries" in statement and "SET is_public" in statement
+    ]
+    assert len(boolean_updates) == 1
+    assert "SET is_public = FALSE" in boolean_updates[0]
+    assert "SET is_public = 0" not in boolean_updates[0]
 
 
 def test_itinerary_ownership_migration_preserves_legacy_rows_and_reaches_head(

@@ -27,7 +27,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE itineraries
-        SET is_public = 0
+        SET is_public = FALSE
         WHERE visibility IN ('private', 'unlisted')
         """
     )
