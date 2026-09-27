@@ -2,7 +2,7 @@
   <section class="page-banner">
     <div class="container">
       <h1>Configure Your Litinerary</h1>
-      <p>Set a short MVP route length and transportation mode before generation.</p>
+      <p>Set a short route length and transportation mode before generation.</p>
     </div>
   </section>
 
@@ -33,7 +33,7 @@
           <option :value="2">2 days</option>
           <option :value="3">3 days</option>
         </select>
-        <p id="duration-help" class="form-help">MVP routes support one to three days from the UI.</p>
+        <p id="duration-help" class="form-help">Routes can be one to three days.</p>
 
         <label for="transportation-mode">Transportation</label>
         <select

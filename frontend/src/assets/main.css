@@ -19,8 +19,9 @@ body {
 
 /*Heading*/
 .header-area {
+  background: #d6d2f4;
+  box-shadow: 0 5px 14px rgba(96, 89, 246, 0.1);
   width: 100%;
-  background: #ffffff;
 }
 
 .main-menu {
@@ -29,7 +30,6 @@ body {
 
 .nav-container {
   height: 96px;
-  background: #d6d2f4;
   display: flex;
   align-items: center;
   padding: 0 14px;
@@ -1204,11 +1204,11 @@ ul {
 
 @media (max-width: 980px) {
   .header-area {
+    background: #d1cff4;
     position: relative;
   }
 
   .nav-container {
-    background: #d1cff4;
     min-height: 78px;
   }
 
@@ -1237,6 +1237,10 @@ ul {
 
   .hero-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hero-art {
+    display: none;
   }
 
   .footer-grid,
