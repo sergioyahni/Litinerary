@@ -29,7 +29,7 @@
     </div>
   </section>
 
-  <section class="section-margin">
+  <!-- <section class="section-margin">
     <div class="container">
       <div class="section-intro">
         <img :src="sectionLogo" alt="" />
@@ -47,34 +47,34 @@
         </article>
       </div>
     </div>
-  </section>
+  </section> -->
 </template>
 
 <script setup lang="ts">
 import heroImage from "../assets/template/home/hero-img.png";
-import londonImage from "../assets/template/home/london.jpg";
-import parisImage from "../assets/template/home/paris.jpg";
-import samarkandImage from "../assets/template/home/samarkand.jpg";
-import sectionLogo from "../assets/template/logo_img.png";
+// import londonImage from "../assets/template/home/london.jpg";
+// import parisImage from "../assets/template/home/paris.jpg";
+// import samarkandImage from "../assets/template/home/samarkand.jpg";
+// import sectionLogo from "../assets/template/logo_img.png";
 
-const previewRoutes = [
-  {
-    title: "London with Oliver Twist",
-    description: "A route through markets, alleys, and river views shaped by Dickensian London.",
-    image: londonImage,
-    alt: "London walking tour",
-  },
-  {
-    title: "Paris with Robert Langdon",
-    description: "A city route for readers who like symbols, museums, and dramatic reveals.",
-    image: parisImage,
-    alt: "Paris walking tour",
-  },
-  {
-    title: "Samarkand with Omar Khayyam",
-    description: "A poetic journey through blue tiles, old roads, and layered memory.",
-    image: samarkandImage,
-    alt: "Samarkand walking tour",
-  },
-];
+// const previewRoutes = [
+//   {
+//     title: "London with Oliver Twist",
+//     description: "A route through markets, alleys, and river views shaped by Dickensian London.",
+//     image: londonImage,
+//     alt: "London walking tour",
+//   },
+//   {
+//     title: "Paris with Robert Langdon",
+//     description: "A city route for readers who like symbols, museums, and dramatic reveals.",
+//     image: parisImage,
+//     alt: "Paris walking tour",
+//   },
+//   {
+//     title: "Samarkand with Omar Khayyam",
+//     description: "A poetic journey through blue tiles, old roads, and layered memory.",
+//     image: samarkandImage,
+//     alt: "Samarkand walking tour",
+//   },
+// ];
 </script>
