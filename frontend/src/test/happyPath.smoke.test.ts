@@ -142,7 +142,7 @@ describe("MVP and Phase 2 happy-path smoke flow", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("Plan a Book-Led City Walk");
+    expect(wrapper.text()).toContain("Plan Your Book-Led City Visit");
 
     await navigateTo("destinations");
     expect(fetchDestinations).toHaveBeenCalled();

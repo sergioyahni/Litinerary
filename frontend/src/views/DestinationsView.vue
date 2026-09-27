@@ -2,7 +2,7 @@
   <section class="page-banner">
     <div class="container">
       <h1>Choose a Destination</h1>
-      <p>Start the MVP flow by selecting one of the supported literary cities.</p>
+      <p>Select one of the supported literary cities.</p>
     </div>
   </section>
 
