@@ -19,6 +19,10 @@ from app.services.mock_repository import (
     list_itineraries,
 )
 from app.services.narration_service import build_itinerary_narration
+from app.services.capability_policy import (
+    require_adaptation_capability,
+    require_generation_capability,
+)
 
 
 router = APIRouter(tags=["itineraries"])
@@ -30,7 +34,7 @@ router = APIRouter(tags=["itineraries"])
 )
 def post_generate_itinerary(
     request: ItineraryGenerationRequest,
-    current_user: CurrentUser | None = Depends(optional_current_user),
+    current_user: CurrentUser | None = Depends(require_generation_capability),
     db: Session = Depends(get_db),
 ) -> ItineraryGenerationResponse:
     log_event(
@@ -74,8 +78,10 @@ def post_generate_itinerary(
 )
 def post_adapt_itinerary(
     request: ItineraryAdaptationRequest,
+    current_user: CurrentUser | None = Depends(require_adaptation_capability),
     db: Session = Depends(get_db),
 ) -> ItineraryGenerationResponse:
+    _ = current_user
     return adapt_itinerary(request, db=db)
 
 

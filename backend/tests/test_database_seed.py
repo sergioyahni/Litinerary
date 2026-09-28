@@ -30,7 +30,7 @@ def test_seed_database_loads_mock_catalog_and_itineraries(tmp_path) -> None:
             "it-london-oliver-twist-1-walking",
         )
 
-    assert {book.id for book in london_books} == {"oliver-twist", "sherlock-holmes"}
+    assert {book.id for book in london_books} == {"oliver-twist"}
     assert seeded_itinerary is not None
     assert seeded_itinerary.days[0].stops[0].poi.id == "smithfield-market"
 

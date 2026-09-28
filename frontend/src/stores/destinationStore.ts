@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import { fetchDestinations } from "../services/destinationsApi";
+import { discoverDestinations, fetchDestinations } from "../services/destinationsApi";
+import { useAuthStore } from "./authStore";
 import type { Destination } from "../types";
 
 export const useDestinationStore = defineStore("destinations", () => {
@@ -30,6 +31,28 @@ export const useDestinationStore = defineStore("destinations", () => {
     }
   }
 
+  async function discoverMissingDestinations(query: string): Promise<void> {
+    const authStore = useAuthStore();
+    if (!authStore.canUseExternalDiscovery) {
+      error.value = "Sign in to search beyond the public repository.";
+      return;
+    }
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      const response = await discoverDestinations(query);
+      destinations.value = response.results;
+      selectedDestinationId.value = null;
+    } catch (caught) {
+      destinations.value = [];
+      error.value =
+        caught instanceof Error ? caught.message : "Unable to discover destinations.";
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
   function selectDestination(destinationId: string): void {
     selectedDestinationId.value = destinationId;
   }
@@ -53,6 +76,7 @@ export const useDestinationStore = defineStore("destinations", () => {
     isLoading,
     error,
     loadDestinations,
+    discoverMissingDestinations,
     selectDestination,
     clearSelection,
     reset,

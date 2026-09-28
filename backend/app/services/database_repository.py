@@ -29,9 +29,7 @@ def database_has_seed_data(db: Session) -> bool:
 
 
 def list_destinations(db: Session) -> list[Destination]:
-    rows = db.scalars(select(DestinationModel)).all()
-    rows = _sort_by_mock_order(rows, [destination.id for destination in DESTINATIONS])
-    return [destination_from_model(row) for row in rows]
+    return search_public_destinations(db, query="")
 
 
 def get_destination(db: Session, destination_id: str) -> Destination | None:
@@ -40,14 +38,50 @@ def get_destination(db: Session, destination_id: str) -> Destination | None:
 
 
 def list_books(db: Session, city_id: str | None = None) -> list[Book]:
-    statement = select(BookModel).options(selectinload(BookModel.destinations))
+    return search_public_books(db, query="", destination_id=city_id)
 
-    if city_id is not None:
-        statement = statement.join(BookModel.destinations).where(DestinationModel.id == city_id)
 
-    rows = db.scalars(statement).unique().all()
-    rows = _sort_by_mock_order(rows, [book.id for book in BOOKS])
-    return [book_from_model(row) for row in rows]
+def search_public_destinations(db: Session, *, query: str = "") -> list[Destination]:
+    normalized = query.strip().lower()
+    itineraries = list_itineraries(db)
+    by_id: dict[str, Destination] = {}
+    for itinerary in itineraries:
+        destination = destination_from_itinerary(itinerary)
+        if normalized and normalized not in " ".join(
+            [
+                destination.id,
+                destination.name,
+                destination.country,
+                destination.region or "",
+            ]
+        ).lower():
+            continue
+        by_id.setdefault(destination.id, destination)
+    ordered = _sort_by_mock_order(list(by_id.values()), [destination.id for destination in DESTINATIONS])
+    return ordered
+
+
+def search_public_books(
+    db: Session,
+    *,
+    query: str = "",
+    destination_id: str | None = None,
+) -> list[Book]:
+    normalized = query.strip().lower()
+    itineraries = list_itineraries(db, city_id=destination_id)
+    grouped_destination_ids: dict[str, set[str]] = {}
+    by_id: dict[str, Book] = {}
+    for itinerary in itineraries:
+        book = book_from_itinerary(itinerary)
+        grouped_destination_ids.setdefault(book.id, set()).add(itinerary.destinationId)
+        if normalized and normalized not in " ".join(
+            [book.id, book.title, book.author, " ".join(book.themes)]
+        ).lower():
+            continue
+        by_id.setdefault(book.id, book)
+    for book_id, book in by_id.items():
+        book.destinationIds[:] = sorted(grouped_destination_ids.get(book_id, set()))
+    return _sort_by_mock_order(list(by_id.values()), [book.id for book in BOOKS])
 
 
 def get_book(db: Session, book_id: str) -> Book | None:
@@ -64,6 +98,15 @@ def list_pois_for_book(db: Session, destination_id: str, book_id: str) -> list[P
         select(POIModel)
         .join(POIModel.books)
         .where(POIModel.destination_id == destination_id, BookModel.id == book_id)
+        .options(selectinload(POIModel.books))
+    ).unique().all()
+    return [poi_from_model(row) for row in rows]
+
+
+def list_pois_for_destination(db: Session, destination_id: str) -> list[POI]:
+    rows = db.scalars(
+        select(POIModel)
+        .where(POIModel.destination_id == destination_id)
         .options(selectinload(POIModel.books))
     ).unique().all()
     return [poi_from_model(row) for row in rows]
@@ -233,9 +276,13 @@ def validate_itinerary_persistence_references(db: Session, itinerary: Itinerary)
         .where(BookModel.id == itinerary.bookId)
         .options(selectinload(BookModel.destinations))
     ).first()
-    if book is None:
-        errors.append(f"Unknown itinerary book: {itinerary.bookId}")
-    elif itinerary.destinationId not in {destination.id for destination in book.destinations}:
+    external_book_metadata = itinerary.bookSourceType == "external" or bool(itinerary.bookProviderId)
+    if book is None and not external_book_metadata:
+        errors.append(
+            f"Unknown itinerary book: {itinerary.bookId}. "
+            "External books must be persisted on the itinerary metadata, not as placeholder books."
+        )
+    elif book is not None and itinerary.destinationId not in {destination.id for destination in book.destinations}:
         errors.append(
             f"Itinerary book '{itinerary.bookId}' is not linked to destination "
             f"'{itinerary.destinationId}'."
@@ -256,7 +303,7 @@ def validate_itinerary_persistence_references(db: Session, itinerary: Itinerary)
                 continue
             if poi.destination_id != itinerary.destinationId:
                 wrong_destination_ids.append(stop.poi.id)
-            if itinerary.bookId not in {book.id for book in poi.books}:
+            if book is not None and itinerary.bookId not in {book.id for book in poi.books}:
                 wrong_book_ids.append(stop.poi.id)
 
     if missing_poi_ids:
@@ -290,6 +337,7 @@ def destination_from_model(row: DestinationModel) -> Destination:
         longitude=row.longitude,
         imageUrl=row.image_url,
         supported=row.supported,
+        sourceType="repository",
     )
 
 
@@ -304,6 +352,7 @@ def book_from_model(row: BookModel) -> Book:
         publicDomain=row.public_domain,
         themes=row.themes or [],
         coverUrl=row.cover_url,
+        sourceType="repository",
     )
 
 
@@ -394,10 +443,32 @@ def itinerary_from_model(row: ItineraryModel) -> Itinerary:
         generatedByService=row.generated_by_service,
         confidenceScore=row.confidence_score,
         provenanceMetadata=row.provenance_metadata or {},
+        bookTitle=row.book_title,
+        bookAuthor=row.book_author,
+        bookDescription=row.book_description,
+        bookPublicationYear=row.book_publication_year,
+        bookPublicDomain=row.book_public_domain,
+        bookThemes=row.book_themes or [],
+        bookCoverUrl=row.book_cover_url,
+        bookSourceType=row.book_source_type,
+        bookProviderId=row.book_provider_id,
+        bookProvenanceMetadata=row.book_provenance_metadata or {},
+        destinationName=row.destination_name,
+        destinationCountry=row.destination_country,
+        destinationRegion=row.destination_region,
+        destinationDescription=row.destination_description,
+        destinationLatitude=row.destination_latitude,
+        destinationLongitude=row.destination_longitude,
+        destinationImageUrl=row.destination_image_url,
+        destinationSourceType=row.destination_source_type,
+        destinationProviderId=row.destination_provider_id,
+        destinationProvenanceMetadata=row.destination_provenance_metadata or {},
     )
 
 
 def itinerary_to_model(db: Session, itinerary: Itinerary) -> ItineraryModel:
+    seed_book = get_book_from_seed(itinerary.bookId)
+    seed_destination = get_destination_from_seed(itinerary.destinationId)
     return ItineraryModel(
         id=itinerary.id,
         destination_id=itinerary.destinationId,
@@ -425,6 +496,40 @@ def itinerary_to_model(db: Session, itinerary: Itinerary) -> ItineraryModel:
         generated_by_service=itinerary.generatedByService,
         confidence_score=itinerary.confidenceScore,
         provenance_metadata=itinerary.provenanceMetadata,
+        book_title=itinerary.bookTitle or (seed_book.title if seed_book else None),
+        book_author=itinerary.bookAuthor or (seed_book.author if seed_book else None),
+        book_description=itinerary.bookDescription or (seed_book.description if seed_book else None),
+        book_publication_year=itinerary.bookPublicationYear
+        if itinerary.bookPublicationYear is not None
+        else (seed_book.publicationYear if seed_book else None),
+        book_public_domain=itinerary.bookPublicDomain
+        if itinerary.bookPublicDomain is not None
+        else (seed_book.publicDomain if seed_book else None),
+        book_themes=itinerary.bookThemes or (seed_book.themes if seed_book else []),
+        book_cover_url=itinerary.bookCoverUrl or (seed_book.coverUrl if seed_book else None),
+        book_source_type=itinerary.bookSourceType or ("repository" if seed_book else None),
+        book_provider_id=itinerary.bookProviderId,
+        book_provenance_metadata=itinerary.bookProvenanceMetadata,
+        destination_name=itinerary.destinationName
+        or (seed_destination.name if seed_destination else None),
+        destination_country=itinerary.destinationCountry
+        or (seed_destination.country if seed_destination else None),
+        destination_region=itinerary.destinationRegion
+        or (seed_destination.region if seed_destination else None),
+        destination_description=itinerary.destinationDescription
+        or (seed_destination.description if seed_destination else None),
+        destination_latitude=itinerary.destinationLatitude
+        if itinerary.destinationLatitude is not None
+        else (seed_destination.latitude if seed_destination else None),
+        destination_longitude=itinerary.destinationLongitude
+        if itinerary.destinationLongitude is not None
+        else (seed_destination.longitude if seed_destination else None),
+        destination_image_url=itinerary.destinationImageUrl
+        or (seed_destination.imageUrl if seed_destination else None),
+        destination_source_type=itinerary.destinationSourceType
+        or ("repository" if seed_destination else None),
+        destination_provider_id=itinerary.destinationProviderId,
+        destination_provenance_metadata=itinerary.destinationProvenanceMetadata,
         days=[
             ItineraryDayModel(
                 id=day.id,
@@ -462,6 +567,65 @@ def _itinerary_load_options():
         .selectinload(ItineraryStopModel.poi)
         .selectinload(POIModel.books)
     )
+
+
+def book_from_itinerary(itinerary: Itinerary) -> Book:
+    catalog_book = get_book_from_seed(itinerary.bookId)
+    return Book(
+        id=itinerary.bookId,
+        destinationIds=[itinerary.destinationId],
+        title=itinerary.bookTitle or (catalog_book.title if catalog_book else itinerary.bookId),
+        author=itinerary.bookAuthor or (catalog_book.author if catalog_book else "Unknown"),
+        description=itinerary.bookDescription
+        or (catalog_book.description if catalog_book else itinerary.summary),
+        publicationYear=itinerary.bookPublicationYear
+        if itinerary.bookPublicationYear is not None
+        else (catalog_book.publicationYear if catalog_book else None),
+        publicDomain=itinerary.bookPublicDomain
+        if itinerary.bookPublicDomain is not None
+        else (catalog_book.publicDomain if catalog_book else False),
+        themes=itinerary.bookThemes or (catalog_book.themes if catalog_book else []),
+        coverUrl=itinerary.bookCoverUrl or (catalog_book.coverUrl if catalog_book else None),
+        sourceType=itinerary.bookSourceType or ("repository" if catalog_book else "itinerary_snapshot"),
+        providerId=itinerary.bookProviderId,
+        provenanceMetadata=itinerary.bookProvenanceMetadata,
+    )
+
+
+def destination_from_itinerary(itinerary: Itinerary) -> Destination:
+    catalog_destination = get_destination_from_seed(itinerary.destinationId)
+    return Destination(
+        id=itinerary.destinationId,
+        name=itinerary.destinationName
+        or (catalog_destination.name if catalog_destination else itinerary.destinationId),
+        country=itinerary.destinationCountry
+        or (catalog_destination.country if catalog_destination else "Unknown"),
+        region=itinerary.destinationRegion
+        or (catalog_destination.region if catalog_destination else None),
+        description=itinerary.destinationDescription
+        or (catalog_destination.description if catalog_destination else itinerary.summary),
+        latitude=itinerary.destinationLatitude
+        if itinerary.destinationLatitude is not None
+        else (catalog_destination.latitude if catalog_destination else 0),
+        longitude=itinerary.destinationLongitude
+        if itinerary.destinationLongitude is not None
+        else (catalog_destination.longitude if catalog_destination else 0),
+        imageUrl=itinerary.destinationImageUrl
+        or (catalog_destination.imageUrl if catalog_destination else None),
+        supported=True,
+        sourceType=itinerary.destinationSourceType
+        or ("repository" if catalog_destination else "itinerary_snapshot"),
+        providerId=itinerary.destinationProviderId,
+        provenanceMetadata=itinerary.destinationProvenanceMetadata,
+    )
+
+
+def get_book_from_seed(book_id: str) -> Book | None:
+    return next((book for book in BOOKS if book.id == book_id), None)
+
+
+def get_destination_from_seed(destination_id: str) -> Destination | None:
+    return next((destination for destination in DESTINATIONS if destination.id == destination_id), None)
 
 
 def _sort_by_mock_order(rows, ordered_ids: list[str]):

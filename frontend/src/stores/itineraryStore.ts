@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { generateItinerary } from "../services/itinerariesApi";
+import { useAuthStore } from "./authStore";
 import type {
   Itinerary,
   ItineraryGenerationRequest,
@@ -27,6 +28,12 @@ export const useItineraryStore = defineStore("itinerary", () => {
   async function submitGeneration(
     request: Omit<ItineraryGenerationRequest, "durationDays" | "transportationMode">,
   ): Promise<ItineraryGenerationResponse | null> {
+    const authStore = useAuthStore();
+    if (!authStore.canGenerateItinerary) {
+      error.value = "Sign in to generate a new itinerary.";
+      return null;
+    }
+
     if (!request.destinationId || !request.bookId) {
       error.value = "Choose a destination and book before generating an itinerary.";
       return null;

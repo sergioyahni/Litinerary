@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import { fetchBooksByDestination } from "../services/booksApi";
+import { discoverBooks, fetchBooksByDestination } from "../services/booksApi";
+import { useAuthStore } from "./authStore";
 import type { Book } from "../types";
 
 export const useBookStore = defineStore("books", () => {
@@ -24,6 +25,27 @@ export const useBookStore = defineStore("books", () => {
     } catch (caught) {
       books.value = [];
       error.value = caught instanceof Error ? caught.message : "Unable to load books.";
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function discoverMissingBooks(destinationId: string, query: string): Promise<void> {
+    const authStore = useAuthStore();
+    if (!authStore.canUseExternalDiscovery) {
+      error.value = "Sign in to search beyond the public repository.";
+      return;
+    }
+    isLoading.value = true;
+    error.value = null;
+
+    try {
+      const response = await discoverBooks(query, destinationId);
+      books.value = response.results;
+      selectedBookId.value = null;
+    } catch (caught) {
+      books.value = [];
+      error.value = caught instanceof Error ? caught.message : "Unable to discover books.";
     } finally {
       isLoading.value = false;
     }
@@ -54,6 +76,7 @@ export const useBookStore = defineStore("books", () => {
     isLoading,
     error,
     loadBooks,
+    discoverMissingBooks,
     selectBook,
     clearBooks,
     reset,

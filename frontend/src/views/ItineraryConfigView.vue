@@ -52,7 +52,7 @@
         </div>
 
         <button class="button compact-button" type="submit" :disabled="itineraryStore.isGenerating">
-          {{ itineraryStore.isGenerating ? "Generating..." : "Generate Itinerary" }}
+          {{ generateButtonLabel }}
         </button>
       </form>
     </div>
@@ -62,6 +62,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "../stores/authStore";
 import { useBookStore } from "../stores/bookStore";
 import { useDestinationStore } from "../stores/destinationStore";
 import { useItineraryStore } from "../stores/itineraryStore";
@@ -71,6 +72,7 @@ const router = useRouter();
 const bookStore = useBookStore();
 const destinationStore = useDestinationStore();
 const itineraryStore = useItineraryStore();
+const authStore = useAuthStore();
 
 const destinationId = computed(() => {
   const param = route.params.destinationId;
@@ -87,6 +89,12 @@ const destinationTitle = computed(
 );
 
 const bookTitle = computed(() => bookStore.selectedBook?.title ?? bookId.value ?? "Selected book");
+const generateButtonLabel = computed(() => {
+  if (itineraryStore.isGenerating) {
+    return "Generating...";
+  }
+  return authStore.canGenerateItinerary ? "Generate Itinerary" : "Sign In to Generate";
+});
 
 onMounted(async () => {
   if (!destinationId.value || !bookId.value) {
@@ -116,6 +124,11 @@ onMounted(async () => {
 
 async function submit(): Promise<void> {
   if (!destinationId.value || !bookId.value) {
+    return;
+  }
+
+  if (!authStore.canGenerateItinerary) {
+    await authStore.login(route.fullPath);
     return;
   }
 

@@ -110,7 +110,7 @@ class MockItineraryGenerationService:
             day_pois = pois[day_index::day_count]
             stops = [
                 ItineraryStop(
-                    id=f"stop-{poi.id}",
+                    id=f"stop-{destination.id}-{book.id}-{day_index + 1}-{poi.id}",
                     poi=poi,
                     order=stop_index + 1,
                     title=poi.name,

@@ -112,7 +112,7 @@ def test_anonymous_public_access_still_works_when_auth_enabled(client, monkeypat
 
     assert destinations.status_code == 200
     assert books.status_code == 200
-    assert generated.status_code == 200
+    assert generated.status_code == 401
 
 
 def test_user_endpoint_requires_auth_when_auth_enabled(client, monkeypatch) -> None:

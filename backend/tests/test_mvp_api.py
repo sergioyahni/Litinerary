@@ -10,13 +10,7 @@ def test_destination_listing_returns_supported_mock_destinations(client) -> None
 
     assert response.status_code == 200
     destinations = response.json()
-    assert [destination["id"] for destination in destinations] == [
-        "london",
-        "paris",
-        "dublin",
-        "prague",
-        "samarkand",
-    ]
+    assert [destination["id"] for destination in destinations] == ["london", "samarkand"]
     assert all(destination["supported"] for destination in destinations)
 
 
@@ -25,7 +19,7 @@ def test_book_listing_by_city_returns_only_books_for_that_city(client) -> None:
 
     assert response.status_code == 200
     books = response.json()
-    assert {book["id"] for book in books} == {"oliver-twist", "sherlock-holmes"}
+    assert {book["id"] for book in books} == {"oliver-twist"}
     assert all("london" in book["destinationIds"] for book in books)
 
 
