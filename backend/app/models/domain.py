@@ -79,7 +79,6 @@ class BookModel(Base):
         secondary=poi_books,
         back_populates="books",
     )
-    itineraries: Mapped[list["ItineraryModel"]] = relationship(back_populates="book")
     ingestion_sources: Mapped[list["BookSourceModel"]] = relationship(
         back_populates="book",
         cascade="all, delete-orphan",
@@ -139,7 +138,7 @@ class ItineraryModel(Base):
 
     id: Mapped[str] = mapped_column(String(180), primary_key=True)
     destination_id: Mapped[str] = mapped_column(ForeignKey("destinations.id"), nullable=False)
-    book_id: Mapped[str] = mapped_column(ForeignKey("books.id"), nullable=False)
+    book_id: Mapped[str] = mapped_column(String(120), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -165,9 +164,28 @@ class ItineraryModel(Base):
     generated_by_service: Mapped[str | None] = mapped_column(String(120))
     confidence_score: Mapped[float | None] = mapped_column(Float)
     provenance_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    book_title: Mapped[str | None] = mapped_column(String(255))
+    book_author: Mapped[str | None] = mapped_column(String(255))
+    book_description: Mapped[str | None] = mapped_column(Text)
+    book_publication_year: Mapped[int | None] = mapped_column(Integer)
+    book_public_domain: Mapped[bool | None] = mapped_column(Boolean)
+    book_themes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    book_cover_url: Mapped[str | None] = mapped_column(String(500))
+    book_source_type: Mapped[str | None] = mapped_column(String(80))
+    book_provider_id: Mapped[str | None] = mapped_column(String(180))
+    book_provenance_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    destination_name: Mapped[str | None] = mapped_column(String(255))
+    destination_country: Mapped[str | None] = mapped_column(String(255))
+    destination_region: Mapped[str | None] = mapped_column(String(255))
+    destination_description: Mapped[str | None] = mapped_column(Text)
+    destination_latitude: Mapped[float | None] = mapped_column(Float)
+    destination_longitude: Mapped[float | None] = mapped_column(Float)
+    destination_image_url: Mapped[str | None] = mapped_column(String(500))
+    destination_source_type: Mapped[str | None] = mapped_column(String(80))
+    destination_provider_id: Mapped[str | None] = mapped_column(String(180))
+    destination_provenance_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     destination: Mapped[DestinationModel] = relationship(back_populates="itineraries")
-    book: Mapped[BookModel] = relationship(back_populates="itineraries")
     days: Mapped[list["ItineraryDayModel"]] = relationship(
         back_populates="itinerary",
         cascade="all, delete-orphan",

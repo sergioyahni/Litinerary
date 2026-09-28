@@ -1,5 +1,10 @@
 # Litinerary
 
+Architecture authority for public discovery and generation:
+[Public Repository and Authenticated Generation](docs/public-repository-authenticated-generation.md)
+and
+[ADR 2026-09-28](docs/adr-20260928-public-repository-authenticated-generation.md).
+
 Litinerary is a book-oriented travel itinerary MVP. It lets a user choose a supported destination, choose a book connected to that place, configure a short route, generate a deterministic mock itinerary, view mapped stops, and browse reusable public itineraries.
 
 The current implementation follows the visual direction of the preserved static travel template in `docs/webpage-template`, while using a Vue 3 frontend and FastAPI backend for the Phase 1 flow described in `docs/App_Design_Document_v2.md`.

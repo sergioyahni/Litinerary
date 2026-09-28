@@ -39,6 +39,11 @@ export const useAuthStore = defineStore("auth", () => {
       session.value?.roles.includes("subscriber") ||
       false,
   );
+  const canUseExternalDiscovery = computed(
+    () => !AUTH_RUNTIME_CONFIG.enabled || isAuthenticated.value,
+  );
+  const canGenerateItinerary = computed(() => canUseExternalDiscovery.value);
+  const canAdaptItinerary = computed(() => canUseExternalDiscovery.value);
 
   async function loginDevelopmentUser(userId = "dev-reader"): Promise<boolean> {
     error.value = null;
@@ -208,6 +213,9 @@ export const useAuthStore = defineStore("auth", () => {
     currentUserId,
     isAdmin,
     isSubscriber,
+    canUseExternalDiscovery,
+    canGenerateItinerary,
+    canAdaptItinerary,
     login,
     restoreSession,
     hydrateAuthenticatedUser,

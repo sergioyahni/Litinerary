@@ -31,6 +31,9 @@ class Destination(BaseModel):
     longitude: float
     imageUrl: str | None = None
     supported: bool
+    sourceType: str = "repository"
+    providerId: str | None = None
+    provenanceMetadata: dict = Field(default_factory=dict)
 
 
 class AffiliateLink(BaseModel):
@@ -54,6 +57,44 @@ class Book(BaseModel):
     themes: list[str]
     coverUrl: str | None = None
     affiliateLinks: list[AffiliateLink] = Field(default_factory=list)
+    sourceType: str = "repository"
+    providerId: str | None = None
+    provenanceMetadata: dict = Field(default_factory=dict)
+
+
+class TransientBookContext(BaseModel):
+    id: str
+    destinationIds: list[str]
+    title: str
+    author: str
+    description: str
+    publicationYear: int | None = None
+    publicDomain: bool = False
+    themes: list[str] = Field(default_factory=list)
+    coverUrl: str | None = None
+    sourceType: str = "external"
+    providerId: str | None = None
+    provenanceMetadata: dict = Field(default_factory=dict)
+
+
+class TransientDestinationContext(BaseModel):
+    id: str
+    name: str
+    country: str
+    region: str | None = None
+    description: str
+    latitude: float
+    longitude: float
+    imageUrl: str | None = None
+    sourceType: str = "external"
+    providerId: str | None = None
+    provenanceMetadata: dict = Field(default_factory=dict)
+
+
+class DiscoverySearchResponse(BaseModel):
+    results: list[Book | Destination]
+    repositoryOnly: bool
+    externalDiscoveryUsed: bool
 
 
 class POI(BaseModel):
@@ -138,6 +179,26 @@ class Itinerary(BaseModel):
     generatedByService: str | None = None
     confidenceScore: float | None = None
     provenanceMetadata: dict = Field(default_factory=dict)
+    bookTitle: str | None = None
+    bookAuthor: str | None = None
+    bookDescription: str | None = None
+    bookPublicationYear: int | None = None
+    bookPublicDomain: bool | None = None
+    bookThemes: list[str] = Field(default_factory=list)
+    bookCoverUrl: str | None = None
+    bookSourceType: str | None = None
+    bookProviderId: str | None = None
+    bookProvenanceMetadata: dict = Field(default_factory=dict)
+    destinationName: str | None = None
+    destinationCountry: str | None = None
+    destinationRegion: str | None = None
+    destinationDescription: str | None = None
+    destinationLatitude: float | None = None
+    destinationLongitude: float | None = None
+    destinationImageUrl: str | None = None
+    destinationSourceType: str | None = None
+    destinationProviderId: str | None = None
+    destinationProvenanceMetadata: dict = Field(default_factory=dict)
 
 
 class ItineraryGenerationRequest(BaseModel):
@@ -145,6 +206,8 @@ class ItineraryGenerationRequest(BaseModel):
     bookId: str
     durationDays: int = Field(ge=1, le=7)
     transportationMode: TransportationMode
+    bookContext: TransientBookContext | None = None
+    destinationContext: TransientDestinationContext | None = None
 
 
 class ItineraryGenerationResponse(BaseModel):

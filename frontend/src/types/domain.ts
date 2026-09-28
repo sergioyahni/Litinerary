@@ -29,6 +29,9 @@ export interface Destination {
   longitude: number;
   imageUrl?: string | null;
   supported: boolean;
+  sourceType?: string;
+  providerId?: string | null;
+  provenanceMetadata?: Record<string, unknown>;
 }
 
 export interface AffiliateLink {
@@ -52,6 +55,15 @@ export interface Book {
   themes: string[];
   coverUrl?: string | null;
   affiliateLinks?: AffiliateLink[];
+  sourceType?: string;
+  providerId?: string | null;
+  provenanceMetadata?: Record<string, unknown>;
+}
+
+export interface DiscoverySearchResponse<T extends Book | Destination> {
+  results: T[];
+  repositoryOnly: boolean;
+  externalDiscoveryUsed: boolean;
 }
 
 export interface POI {
@@ -136,6 +148,26 @@ export interface Itinerary {
   generatedByService?: string | null;
   confidenceScore?: number | null;
   provenanceMetadata?: Record<string, unknown>;
+  bookTitle?: string | null;
+  bookAuthor?: string | null;
+  bookDescription?: string | null;
+  bookPublicationYear?: number | null;
+  bookPublicDomain?: boolean | null;
+  bookThemes?: string[];
+  bookCoverUrl?: string | null;
+  bookSourceType?: string | null;
+  bookProviderId?: string | null;
+  bookProvenanceMetadata?: Record<string, unknown>;
+  destinationName?: string | null;
+  destinationCountry?: string | null;
+  destinationRegion?: string | null;
+  destinationDescription?: string | null;
+  destinationLatitude?: number | null;
+  destinationLongitude?: number | null;
+  destinationImageUrl?: string | null;
+  destinationSourceType?: string | null;
+  destinationProviderId?: string | null;
+  destinationProvenanceMetadata?: Record<string, unknown>;
 }
 
 export interface ItineraryGenerationRequest {

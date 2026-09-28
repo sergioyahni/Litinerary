@@ -15,6 +15,7 @@ from app.schemas.domain import (
     TransportationMode,
 )
 from app.services import database_repository as db_repository
+from app.services.discovery_service import get_external_book
 from app.services.mock_ai_service import get_ai_pipeline
 from app.services.openai_compatible_llm_adapter import live_llm_request_scope
 from app.services.routing_service import enrich_itinerary_routes
@@ -29,10 +30,25 @@ def _use_database(db: Session | None) -> bool:
     return db_repository.database_has_seed_data(db)
 
 
-def list_destinations(db: Session | None = None) -> list[Destination]:
+def list_destinations(db: Session | None = None, query: str = "") -> list[Destination]:
     if _use_database(db):
-        return db_repository.list_destinations(db)
-    return DESTINATIONS
+        return db_repository.search_public_destinations(db, query=query)
+    normalized = query.strip().lower()
+    destination_ids = {
+        itinerary.destinationId
+        for itinerary in ITINERARIES
+        if _is_public_repository_itinerary(itinerary)
+    }
+    destinations = [destination for destination in DESTINATIONS if destination.id in destination_ids]
+    if normalized:
+        destinations = [
+            destination
+            for destination in destinations
+            if normalized in " ".join(
+                [destination.id, destination.name, destination.country, destination.region or ""]
+            ).lower()
+        ]
+    return destinations
 
 
 def get_destination(destination_id: str, db: Session | None = None) -> Destination:
@@ -61,17 +77,39 @@ def get_book(book_id: str, db: Session | None = None) -> Book:
     raise not_found("book", book_id)
 
 
-def list_books(city_id: str | None = None, db: Session | None = None) -> list[Book]:
+def list_books(
+    city_id: str | None = None,
+    db: Session | None = None,
+    query: str = "",
+) -> list[Book]:
     if _use_database(db):
         if city_id is not None and db_repository.get_destination(db, city_id) is None:
             raise not_found("destination", city_id)
-        return db_repository.list_books(db, city_id=city_id)
+        return db_repository.search_public_books(db, query=query, destination_id=city_id)
 
-    if city_id is None:
-        return BOOKS
-
-    get_destination(city_id, db=db)
-    return [book for book in BOOKS if city_id in book.destinationIds]
+    normalized = query.strip().lower()
+    public_itineraries = [
+        itinerary for itinerary in ITINERARIES if _is_public_repository_itinerary(itinerary)
+    ]
+    if city_id is not None:
+        get_destination(city_id, db=db)
+        public_itineraries = [
+            itinerary for itinerary in public_itineraries if itinerary.destinationId == city_id
+        ]
+    book_ids = {itinerary.bookId for itinerary in public_itineraries}
+    books = [book for book in BOOKS if book.id in book_ids]
+    books.extend(
+        db_repository.book_from_itinerary(itinerary)
+        for itinerary in public_itineraries
+        if itinerary.bookId not in {book.id for book in BOOKS}
+    )
+    if normalized:
+        books = [
+            book
+            for book in books
+            if normalized in " ".join([book.id, book.title, book.author]).lower()
+        ]
+    return books
 
 
 def list_itineraries(
@@ -147,7 +185,7 @@ def generate_itinerary(
     usage_guard = get_usage_guard()
     usage_guard.guard_itinerary_request_bounds(duration_days=request.durationDays)
     destination = get_destination(request.destinationId, db=db)
-    book = get_book(request.bookId, db=db)
+    book = _resolve_generation_book(request, db=db)
 
     if request.destinationId not in book.destinationIds:
         raise validation_error(
@@ -180,6 +218,12 @@ def generate_itinerary(
     if partial_match is not None:
         with live_llm_request_scope():
             itinerary = _adapt_itinerary(partial_match, request)
+            itinerary = _with_publication_metadata(
+                itinerary,
+                destination=destination,
+                book=book,
+                user_id=user_id,
+            )
             itinerary = enrich_itinerary_routes(itinerary)
             _ensure_ai_approved(itinerary)
         _save_itinerary_once(itinerary, db=db)
@@ -191,6 +235,8 @@ def generate_itinerary(
         )
 
     candidate_pois = _pois_for(destination.id, book.id, db=db)
+    if not candidate_pois and book.sourceType == "external":
+        candidate_pois = _pois_for_destination(destination.id, db=db)
     if not candidate_pois:
         raise not_found_detail(
             f"No mock POIs are available for book '{book.id}' in destination '{destination.id}'"
@@ -203,6 +249,12 @@ def generate_itinerary(
             book=book,
             pois=candidate_pois,
             request=request,
+        )
+        itinerary = _with_publication_metadata(
+            itinerary,
+            destination=destination,
+            book=book,
+            user_id=user_id,
         )
         itinerary = enrich_itinerary_routes(itinerary)
         _ensure_ai_approved(itinerary)
@@ -229,6 +281,14 @@ def adapt_itinerary(
     )
     with live_llm_request_scope():
         itinerary = _adapt_itinerary(source, generation_request)
+        destination = get_destination(source.destinationId, db=db)
+        book = _book_from_source(source, db=db)
+        itinerary = _with_publication_metadata(
+            itinerary,
+            destination=destination,
+            book=book,
+            user_id=None,
+        )
         itinerary = enrich_itinerary_routes(itinerary)
         _ensure_ai_approved(itinerary)
     _save_itinerary_once(itinerary, db=db)
@@ -296,6 +356,87 @@ def _pois_for(destination_id: str, book_id: str, db: Session | None = None) -> l
         for poi in POIS
         if poi.destinationId == destination_id and book_id in poi.bookIds
     ]
+
+
+def _pois_for_destination(destination_id: str, db: Session | None = None) -> list[POI]:
+    if _use_database(db):
+        return db_repository.list_pois_for_destination(db, destination_id=destination_id)
+
+    return [poi for poi in POIS if poi.destinationId == destination_id]
+
+
+def _resolve_generation_book(
+    request: ItineraryGenerationRequest,
+    db: Session | None = None,
+) -> Book:
+    try:
+        return get_book(request.bookId, db=db)
+    except Exception:
+        if request.bookContext is not None:
+            return Book(
+                id=request.bookContext.id,
+                destinationIds=request.bookContext.destinationIds,
+                title=request.bookContext.title,
+                author=request.bookContext.author,
+                description=request.bookContext.description,
+                publicationYear=request.bookContext.publicationYear,
+                publicDomain=request.bookContext.publicDomain,
+                themes=request.bookContext.themes,
+                coverUrl=request.bookContext.coverUrl,
+                sourceType=request.bookContext.sourceType,
+                providerId=request.bookContext.providerId,
+                provenanceMetadata=request.bookContext.provenanceMetadata,
+            )
+        external = get_external_book(request.bookId, destination_id=request.destinationId)
+        if external is not None:
+            return external
+        raise
+
+
+def _book_from_source(source: Itinerary, db: Session | None = None) -> Book:
+    try:
+        return get_book(source.bookId, db=db)
+    except Exception:
+        return db_repository.book_from_itinerary(source)
+
+
+def _with_publication_metadata(
+    itinerary: Itinerary,
+    *,
+    destination: Destination,
+    book: Book,
+    user_id: str | None,
+) -> Itinerary:
+    return itinerary.model_copy(
+        update={
+            "isPublic": True,
+            "visibility": "public",
+            "ownerUserId": None,
+            "createdByMode": "registered_user" if user_id else itinerary.createdByMode,
+            "createdByUserId": None,
+            "bookTitle": book.title,
+            "bookAuthor": book.author,
+            "bookDescription": book.description,
+            "bookPublicationYear": book.publicationYear,
+            "bookPublicDomain": book.publicDomain,
+            "bookThemes": book.themes,
+            "bookCoverUrl": book.coverUrl,
+            "bookSourceType": book.sourceType,
+            "bookProviderId": book.providerId,
+            "bookProvenanceMetadata": book.provenanceMetadata,
+            "destinationName": destination.name,
+            "destinationCountry": destination.country,
+            "destinationRegion": destination.region,
+            "destinationDescription": destination.description,
+            "destinationLatitude": destination.latitude,
+            "destinationLongitude": destination.longitude,
+            "destinationImageUrl": destination.imageUrl,
+            "destinationSourceType": destination.sourceType,
+            "destinationProviderId": destination.providerId,
+            "destinationProvenanceMetadata": destination.provenanceMetadata,
+        },
+        deep=True,
+    )
 
 
 def _adapt_itinerary(

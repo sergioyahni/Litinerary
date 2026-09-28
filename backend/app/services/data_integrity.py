@@ -60,8 +60,10 @@ def check_database_integrity(db: Session) -> list[IntegrityViolation]:
             FROM itineraries i
             LEFT JOIN books b ON b.id = i.book_id
             WHERE b.id IS NULL
+              AND COALESCE(i.book_source_type, '') != 'external'
+              AND i.book_provider_id IS NULL
             """,
-            "itineraries must reference an existing book",
+            "catalog-backed itineraries must reference an existing book",
         ),
         (
             "itinerary_book_destination_mismatch",
@@ -70,7 +72,9 @@ def check_database_integrity(db: Session) -> list[IntegrityViolation]:
             FROM itineraries i
             LEFT JOIN book_destinations bd
               ON bd.book_id = i.book_id AND bd.destination_id = i.destination_id
+            LEFT JOIN books b ON b.id = i.book_id
             WHERE bd.book_id IS NULL
+              AND b.id IS NOT NULL
             """,
             "itinerary books must be linked to the itinerary destination",
         ),
@@ -94,7 +98,9 @@ def check_database_integrity(db: Session) -> list[IntegrityViolation]:
             JOIN itinerary_days d ON d.id = s.day_id
             JOIN itineraries i ON i.id = d.itinerary_id
             LEFT JOIN poi_books pb ON pb.poi_id = s.poi_id AND pb.book_id = i.book_id
+            LEFT JOIN books b ON b.id = i.book_id
             WHERE pb.poi_id IS NULL
+              AND b.id IS NOT NULL
             """,
             "itinerary stop POIs must be linked to the itinerary book",
         ),
