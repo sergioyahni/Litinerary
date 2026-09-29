@@ -8,6 +8,32 @@
 
   <section class="section-margin">
     <div class="container">
+      <form
+        v-if="authStore.canUseExternalDiscovery"
+        class="discovery-form"
+        aria-label="Discover destinations beyond the public repository"
+        @submit.prevent="discoverDestinations"
+      >
+        <label for="destination-discovery-query">Find another destination</label>
+        <div class="discovery-form-row">
+          <input
+            id="destination-discovery-query"
+            v-model="discoveryQuery"
+            autocomplete="off"
+            placeholder="Search by city or country"
+            required
+            type="search"
+          />
+          <button
+            class="button compact-button"
+            :disabled="destinationStore.isLoading || !discoveryQuery.trim()"
+            type="submit"
+          >
+            Search
+          </button>
+        </div>
+      </form>
+
       <div v-if="destinationStore.isLoading" class="placeholder-panel" aria-live="polite">
         <p class="loading-note">Loading destinations...</p>
       </div>
@@ -48,10 +74,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, ref } from "vue";
+import { useAuthStore } from "../stores/authStore";
 import { useDestinationStore } from "../stores/destinationStore";
 
+const authStore = useAuthStore();
 const destinationStore = useDestinationStore();
+const discoveryQuery = ref("");
+
+function discoverDestinations(): void {
+  const query = discoveryQuery.value.trim();
+  if (query && authStore.canUseExternalDiscovery) {
+    void destinationStore.discoverMissingDestinations(query);
+  }
+}
 
 onMounted(() => {
   if (destinationStore.destinations.length === 0) {

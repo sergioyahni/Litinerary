@@ -521,6 +521,41 @@ ul {
   padding: 10px 24px;
 }
 
+.discovery-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 28px;
+  max-width: 720px;
+}
+
+.discovery-form label {
+  color: #2a2a2a;
+  font-weight: 700;
+}
+
+.discovery-form-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.discovery-form input {
+  border: 1px solid #dddddd;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.discovery-form input:focus {
+  border-color: #6059f6;
+  box-shadow: 0 0 0 0.2rem rgba(96, 89, 246, 0.15);
+  outline: none;
+}
+
+.discovery-form .compact-button {
+  margin-top: 0;
+}
+
 .auth-actions .compact-button {
   margin-top: 0;
 }
@@ -1256,6 +1291,7 @@ ul {
 }
 
 @media (max-width: 640px) {
+  .discovery-form-row,
   .form-row,
   .footer-grid,
   .route-card-grid,
