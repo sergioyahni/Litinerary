@@ -51,7 +51,22 @@
           {{ itineraryStore.error }}
         </div>
 
-        <button class="button compact-button" type="submit" :disabled="itineraryStore.isGenerating">
+        <RouterLink
+          v-if="repositoryStore.exactMatch"
+          class="button compact-button"
+          :to="{
+            name: 'itinerary-detail',
+            params: { id: repositoryStore.exactMatch.id },
+          }"
+        >
+          Open Existing Itinerary
+        </RouterLink>
+        <button
+          v-else
+          class="button compact-button"
+          type="submit"
+          :disabled="itineraryStore.isGenerating || isCheckingPublicRepository"
+        >
           {{ generateButtonLabel }}
         </button>
       </form>
@@ -60,19 +75,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/authStore";
 import { useBookStore } from "../stores/bookStore";
 import { useDestinationStore } from "../stores/destinationStore";
+import { useItineraryRepositoryStore } from "../stores/itineraryRepositoryStore";
 import { useItineraryStore } from "../stores/itineraryStore";
 
 const route = useRoute();
 const router = useRouter();
 const bookStore = useBookStore();
 const destinationStore = useDestinationStore();
+const repositoryStore = useItineraryRepositoryStore();
 const itineraryStore = useItineraryStore();
 const authStore = useAuthStore();
+const isCheckingPublicRepository = ref(false);
 
 const destinationId = computed(() => {
   const param = route.params.destinationId;
@@ -90,6 +108,9 @@ const destinationTitle = computed(
 
 const bookTitle = computed(() => bookStore.selectedBook?.title ?? bookId.value ?? "Selected book");
 const generateButtonLabel = computed(() => {
+  if (isCheckingPublicRepository.value) {
+    return "Checking Public Repository...";
+  }
   if (itineraryStore.isGenerating) {
     return "Generating...";
   }
@@ -120,10 +141,46 @@ onMounted(async () => {
   } else {
     bookStore.clearBooks();
   }
+
+  await checkPublicRepository();
 });
+
+watch(
+  [
+    destinationId,
+    bookId,
+    () => itineraryStore.durationDays,
+    () => itineraryStore.transportationMode,
+  ],
+  () => {
+    void checkPublicRepository();
+  },
+);
+
+async function checkPublicRepository(): Promise<void> {
+  if (!destinationId.value || !bookId.value) {
+    return;
+  }
+
+  isCheckingPublicRepository.value = true;
+  try {
+    await repositoryStore.findExactPublicItinerary({
+      destinationId: destinationId.value,
+      bookId: bookId.value,
+      durationDays: itineraryStore.durationDays,
+      transportationMode: itineraryStore.transportationMode,
+    });
+  } finally {
+    isCheckingPublicRepository.value = false;
+  }
+}
 
 async function submit(): Promise<void> {
   if (!destinationId.value || !bookId.value) {
+    return;
+  }
+
+  if (isCheckingPublicRepository.value || repositoryStore.exactMatch) {
     return;
   }
 

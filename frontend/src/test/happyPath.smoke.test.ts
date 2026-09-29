@@ -110,7 +110,7 @@ describe("MVP and Phase 2 happy-path smoke flow", () => {
       sourceItineraryId: itineraryFixture.id,
       message: "Matched an existing public itinerary.",
     });
-    vi.mocked(fetchPublicItineraries).mockResolvedValue([itineraryFixture]);
+    vi.mocked(fetchPublicItineraries).mockResolvedValue([]);
     vi.mocked(fetchItineraryDetail).mockResolvedValue(itineraryFixture);
     vi.mocked(fetchUser).mockResolvedValue(userProfile);
     vi.mocked(createUser).mockResolvedValue(userProfile);
@@ -198,6 +198,7 @@ describe("MVP and Phase 2 happy-path smoke flow", () => {
       value: { pace: "slow", interests: ["markets"] },
     });
 
+    vi.mocked(fetchPublicItineraries).mockResolvedValue([itineraryFixture]);
     await navigateTo("itinerary-repository");
     expect(fetchPublicItineraries).toHaveBeenCalled();
     expect(wrapper.text()).toContain("Public Litineraries");

@@ -91,6 +91,33 @@ describe("itinerary Pinia stores", () => {
     expect(store.isLoading).toBe(false);
   });
 
+  it("matches public itineraries across every reusable configuration dimension", async () => {
+    const candidates = [
+      { ...itineraryFixture, id: "wrong-destination", destinationId: "samarkand" },
+      { ...itineraryFixture, id: "wrong-book", bookId: "bleak-house" },
+      { ...itineraryFixture, id: "wrong-duration", durationDays: 2 },
+      { ...itineraryFixture, id: "wrong-mode", transportationMode: "car_taxi" as const },
+      itineraryFixture,
+    ];
+    vi.mocked(fetchPublicItineraries).mockResolvedValue(candidates);
+    const store = useItineraryRepositoryStore();
+
+    const match = await store.findExactPublicItinerary({
+      destinationId: "london",
+      bookId: "oliver-twist",
+      durationDays: 1,
+      transportationMode: "walking",
+    });
+
+    expect(fetchPublicItineraries).toHaveBeenCalledWith({
+      cityId: "london",
+      bookId: "oliver-twist",
+      transportationMode: "walking",
+    });
+    expect(match?.id).toBe(itineraryFixture.id);
+    expect(store.exactMatch?.id).toBe(itineraryFixture.id);
+  });
+
   it("loads itinerary detail into selected itinerary", async () => {
     vi.mocked(fetchItineraryDetail).mockResolvedValue(itineraryFixture);
     const store = useItineraryRepositoryStore();
@@ -140,12 +167,14 @@ describe("itinerary Pinia stores", () => {
     const store = useItineraryRepositoryStore();
     store.itineraries = [itineraryFixture];
     store.selectedItinerary = itineraryFixture;
+    store.exactMatch = itineraryFixture;
     store.error = "Old error";
 
     store.reset();
 
     expect(store.itineraries).toEqual([]);
     expect(store.selectedItinerary).toBeNull();
+    expect(store.exactMatch).toBeNull();
     expect(store.error).toBeNull();
   });
 });
