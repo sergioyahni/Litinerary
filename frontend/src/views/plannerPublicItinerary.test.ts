@@ -2,7 +2,16 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount, RouterLinkStub } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bookFixture, destinationFixture, itineraryFixture } from "../test/fixtures";
+import { useItineraryRepositoryStore } from "../stores/itineraryRepositoryStore";
 import ItineraryConfigView from "./ItineraryConfigView.vue";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 const mocks = vi.hoisted(() => ({
   auth: {
@@ -112,6 +121,64 @@ describe("public itinerary planner handoff", () => {
 
     expect(mocks.auth.login).toHaveBeenCalledWith(mocks.route.fullPath);
     expect(mocks.generateItinerary).not.toHaveBeenCalled();
+  });
+
+  it("removes a previous match while a changed configuration resolves to no match", async () => {
+    const noMatchLookup = deferred<typeof itineraryFixture[]>();
+    mocks.fetchPublicItineraries
+      .mockResolvedValueOnce([itineraryFixture])
+      .mockReturnValueOnce(noMatchLookup.promise);
+    const wrapper = mountConfiguration();
+    await flushPromises();
+    expect(wrapper.text()).toContain("Open Existing Itinerary");
+
+    await wrapper.get<HTMLSelectElement>("#duration-days").setValue("2");
+    expect(wrapper.text()).not.toContain("Open Existing Itinerary");
+    expect(wrapper.get('form.config-panel button[type="submit"]').text()).toBe(
+      "Checking Public Repository...",
+    );
+
+    noMatchLookup.resolve([]);
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Open Existing Itinerary");
+    expect(wrapper.get('form.config-panel button[type="submit"]').text()).toBe(
+      "Sign In to Generate",
+    );
+  });
+
+  it("clears a previous match when the selected book is unavailable", async () => {
+    mocks.fetchBooksByDestination.mockResolvedValue([]);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const repositoryStore = useItineraryRepositoryStore(pinia);
+    repositoryStore.exactMatch = itineraryFixture;
+    const wrapper = mount(ItineraryConfigView, {
+      global: { plugins: [pinia], stubs: { RouterLink: RouterLinkStub } },
+    });
+
+    await flushPromises();
+
+    expect(repositoryStore.exactMatch).toBeNull();
+    expect(wrapper.text()).not.toContain("Open Existing Itinerary");
+    expect(mocks.fetchPublicItineraries).not.toHaveBeenCalled();
+  });
+
+  it("clears a previous match when the selected destination is unavailable", async () => {
+    mocks.fetchDestinations.mockResolvedValue([]);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const repositoryStore = useItineraryRepositoryStore(pinia);
+    repositoryStore.exactMatch = itineraryFixture;
+    const wrapper = mount(ItineraryConfigView, {
+      global: { plugins: [pinia], stubs: { RouterLink: RouterLinkStub } },
+    });
+
+    await flushPromises();
+
+    expect(repositoryStore.exactMatch).toBeNull();
+    expect(wrapper.text()).not.toContain("Open Existing Itinerary");
+    expect(mocks.fetchBooksByDestination).not.toHaveBeenCalled();
+    expect(mocks.fetchPublicItineraries).not.toHaveBeenCalled();
   });
 
   it("preserves authenticated generation for a no-match configuration", async () => {

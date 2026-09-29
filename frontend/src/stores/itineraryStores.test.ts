@@ -9,6 +9,16 @@ import { itineraryFixture } from "../test/fixtures";
 import { useItineraryRepositoryStore } from "./itineraryRepositoryStore";
 import { useItineraryStore } from "./itineraryStore";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 vi.mock("../services/itinerariesApi", () => ({
   fetchItineraryDetail: vi.fn(),
   fetchPublicItineraries: vi.fn(),
@@ -118,6 +128,73 @@ describe("itinerary Pinia stores", () => {
     expect(store.exactMatch?.id).toBe(itineraryFixture.id);
   });
 
+  it("does not let an older lookup replace the latest exact match", async () => {
+    const walkingLookup = deferred<typeof itineraryFixture[]>();
+    const carLookup = deferred<typeof itineraryFixture[]>();
+    vi.mocked(fetchPublicItineraries)
+      .mockReturnValueOnce(walkingLookup.promise)
+      .mockReturnValueOnce(carLookup.promise);
+    const store = useItineraryRepositoryStore();
+
+    const firstRequest = store.findExactPublicItinerary({
+      destinationId: "london",
+      bookId: "oliver-twist",
+      durationDays: 1,
+      transportationMode: "walking",
+    });
+    const carItinerary = {
+      ...itineraryFixture,
+      id: "it-london-oliver-twist-1-car-taxi",
+      transportationMode: "car_taxi" as const,
+    };
+    const latestRequest = store.findExactPublicItinerary({
+      destinationId: "london",
+      bookId: "oliver-twist",
+      durationDays: 1,
+      transportationMode: "car_taxi",
+    });
+
+    carLookup.resolve([carItinerary]);
+    await latestRequest;
+    expect(store.exactMatch?.id).toBe(carItinerary.id);
+
+    walkingLookup.resolve([itineraryFixture]);
+    await firstRequest;
+    expect(store.exactMatch?.id).toBe(carItinerary.id);
+  });
+
+  it("keeps the latest lookup loading when an obsolete request finishes", async () => {
+    const firstLookup = deferred<typeof itineraryFixture[]>();
+    const latestLookup = deferred<typeof itineraryFixture[]>();
+    vi.mocked(fetchPublicItineraries)
+      .mockReturnValueOnce(firstLookup.promise)
+      .mockReturnValueOnce(latestLookup.promise);
+    const store = useItineraryRepositoryStore();
+
+    const firstRequest = store.findExactPublicItinerary({
+      destinationId: "london",
+      bookId: "oliver-twist",
+      durationDays: 1,
+      transportationMode: "walking",
+    });
+    const latestRequest = store.findExactPublicItinerary({
+      destinationId: "london",
+      bookId: "oliver-twist",
+      durationDays: 2,
+      transportationMode: "walking",
+    });
+
+    firstLookup.resolve([itineraryFixture]);
+    await firstRequest;
+    expect(store.isCheckingExactMatch).toBe(true);
+    expect(store.exactMatch).toBeNull();
+
+    latestLookup.resolve([]);
+    await latestRequest;
+    expect(store.isCheckingExactMatch).toBe(false);
+    expect(store.exactMatch).toBeNull();
+  });
+
   it("loads itinerary detail into selected itinerary", async () => {
     vi.mocked(fetchItineraryDetail).mockResolvedValue(itineraryFixture);
     const store = useItineraryRepositoryStore();
@@ -175,6 +252,7 @@ describe("itinerary Pinia stores", () => {
     expect(store.itineraries).toEqual([]);
     expect(store.selectedItinerary).toBeNull();
     expect(store.exactMatch).toBeNull();
+    expect(store.isCheckingExactMatch).toBe(false);
     expect(store.error).toBeNull();
   });
 });

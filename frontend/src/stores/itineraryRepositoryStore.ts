@@ -17,9 +17,11 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
   const itineraries = ref<Itinerary[]>([]);
   const selectedItinerary = ref<Itinerary | null>(null);
   const exactMatch = ref<Itinerary | null>(null);
+  const isCheckingExactMatch = ref(false);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const hasItineraries = computed(() => itineraries.value.length > 0);
+  let exactMatchRequestId = 0;
 
   async function loadItineraries(): Promise<void> {
     isLoading.value = true;
@@ -62,7 +64,8 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
   async function findExactPublicItinerary(
     criteria: ExactPublicItineraryCriteria,
   ): Promise<Itinerary | null> {
-    isLoading.value = true;
+    const requestId = ++exactMatchRequestId;
+    isCheckingExactMatch.value = true;
     error.value = null;
     exactMatch.value = null;
 
@@ -72,7 +75,7 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
         bookId: criteria.bookId,
         transportationMode: criteria.transportationMode,
       });
-      exactMatch.value =
+      const match =
         candidates.find(
           (itinerary) =>
             itinerary.destinationId === criteria.destinationId &&
@@ -80,14 +83,28 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
             itinerary.durationDays === criteria.durationDays &&
             itinerary.transportationMode === criteria.transportationMode,
         ) ?? null;
-      return exactMatch.value;
+      if (requestId !== exactMatchRequestId) {
+        return null;
+      }
+      exactMatch.value = match;
+      return match;
     } catch (caught) {
-      error.value =
-        caught instanceof Error ? caught.message : "Unable to check public itineraries.";
+      if (requestId === exactMatchRequestId) {
+        error.value =
+          caught instanceof Error ? caught.message : "Unable to check public itineraries.";
+      }
       return null;
     } finally {
-      isLoading.value = false;
+      if (requestId === exactMatchRequestId) {
+        isCheckingExactMatch.value = false;
+      }
     }
+  }
+
+  function clearExactMatch(): void {
+    exactMatchRequestId += 1;
+    exactMatch.value = null;
+    isCheckingExactMatch.value = false;
   }
 
   function clearSelectedItinerary(): void {
@@ -98,7 +115,7 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
   function reset(): void {
     itineraries.value = [];
     selectedItinerary.value = null;
-    exactMatch.value = null;
+    clearExactMatch();
     isLoading.value = false;
     error.value = null;
   }
@@ -107,12 +124,14 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
     itineraries,
     selectedItinerary,
     exactMatch,
+    isCheckingExactMatch,
     hasItineraries,
     isLoading,
     error,
     loadItineraries,
     loadItineraryDetail,
     findExactPublicItinerary,
+    clearExactMatch,
     clearSelectedItinerary,
     reset,
   };

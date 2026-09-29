@@ -65,7 +65,7 @@
           v-else
           class="button compact-button"
           type="submit"
-          :disabled="itineraryStore.isGenerating || isCheckingPublicRepository"
+          :disabled="itineraryStore.isGenerating || repositoryStore.isCheckingExactMatch"
         >
           {{ generateButtonLabel }}
         </button>
@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/authStore";
 import { useBookStore } from "../stores/bookStore";
@@ -90,7 +90,6 @@ const destinationStore = useDestinationStore();
 const repositoryStore = useItineraryRepositoryStore();
 const itineraryStore = useItineraryStore();
 const authStore = useAuthStore();
-const isCheckingPublicRepository = ref(false);
 
 const destinationId = computed(() => {
   const param = route.params.destinationId;
@@ -108,7 +107,7 @@ const destinationTitle = computed(
 
 const bookTitle = computed(() => bookStore.selectedBook?.title ?? bookId.value ?? "Selected book");
 const generateButtonLabel = computed(() => {
-  if (isCheckingPublicRepository.value) {
+  if (repositoryStore.isCheckingExactMatch) {
     return "Checking Public Repository...";
   }
   if (itineraryStore.isGenerating) {
@@ -127,6 +126,11 @@ onMounted(async () => {
     await destinationStore.loadDestinations();
   }
 
+  if (!destinationStore.destinations.some((destination) => destination.id === destinationId.value)) {
+    repositoryStore.clearExactMatch();
+    return;
+  }
+
   destinationStore.selectDestination(destinationId.value);
 
   if (
@@ -140,6 +144,8 @@ onMounted(async () => {
     bookStore.selectBook(bookId.value);
   } else {
     bookStore.clearBooks();
+    repositoryStore.clearExactMatch();
+    return;
   }
 
   await checkPublicRepository();
@@ -159,20 +165,16 @@ watch(
 
 async function checkPublicRepository(): Promise<void> {
   if (!destinationId.value || !bookId.value) {
+    repositoryStore.clearExactMatch();
     return;
   }
 
-  isCheckingPublicRepository.value = true;
-  try {
-    await repositoryStore.findExactPublicItinerary({
-      destinationId: destinationId.value,
-      bookId: bookId.value,
-      durationDays: itineraryStore.durationDays,
-      transportationMode: itineraryStore.transportationMode,
-    });
-  } finally {
-    isCheckingPublicRepository.value = false;
-  }
+  await repositoryStore.findExactPublicItinerary({
+    destinationId: destinationId.value,
+    bookId: bookId.value,
+    durationDays: itineraryStore.durationDays,
+    transportationMode: itineraryStore.transportationMode,
+  });
 }
 
 async function submit(): Promise<void> {
@@ -180,7 +182,7 @@ async function submit(): Promise<void> {
     return;
   }
 
-  if (isCheckingPublicRepository.value || repositoryStore.exactMatch) {
+  if (repositoryStore.isCheckingExactMatch || repositoryStore.exactMatch) {
     return;
   }
 
