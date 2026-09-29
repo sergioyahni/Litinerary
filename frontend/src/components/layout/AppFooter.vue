@@ -24,7 +24,7 @@
         <ul>
           <li><RouterLink :to="{ name: 'itinerary-config' }">Configure a Tour</RouterLink></li>
           <li><RouterLink :to="{ name: 'generated-itinerary' }">Generated Itinerary</RouterLink></li>
-          <li><RouterLink :to="{ name: 'itinerary-detail', params: { id: 'sample' } }">Itinerary Detail</RouterLink></li>
+          <li><RouterLink :to="{ name: 'itinerary-repository' }">Public Repository</RouterLink></li>
         </ul>
       </section>
 

@@ -150,7 +150,7 @@ describe("Batch 3 frontend/API integration flow", () => {
     vi.mocked(fetchDestinations).mockResolvedValue([destinationFixture]);
     vi.mocked(fetchBooksByDestination).mockResolvedValue([sherlockBookFixture]);
     vi.mocked(generateItinerary).mockResolvedValue(sherlockGenerationResponseFixture);
-    vi.mocked(fetchPublicItineraries).mockResolvedValue([sherlockItineraryFixture]);
+    vi.mocked(fetchPublicItineraries).mockResolvedValue([]);
     vi.mocked(fetchItineraryDetail).mockResolvedValue(sherlockItineraryFixture);
     vi.mocked(fetchItineraryNarration).mockResolvedValue(safeNarration);
     vi.mocked(generateItineraryNarration).mockResolvedValue(safeNarration);

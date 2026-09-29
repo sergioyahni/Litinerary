@@ -4,14 +4,24 @@ import {
   fetchItineraryDetail,
   fetchPublicItineraries,
 } from "../services/itinerariesApi";
-import type { Itinerary } from "../types";
+import type { Itinerary, TransportationMode } from "../types";
+
+interface ExactPublicItineraryCriteria {
+  destinationId: string;
+  bookId: string;
+  durationDays: number;
+  transportationMode: TransportationMode;
+}
 
 export const useItineraryRepositoryStore = defineStore("itineraryRepository", () => {
   const itineraries = ref<Itinerary[]>([]);
   const selectedItinerary = ref<Itinerary | null>(null);
+  const exactMatch = ref<Itinerary | null>(null);
+  const isCheckingExactMatch = ref(false);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const hasItineraries = computed(() => itineraries.value.length > 0);
+  let exactMatchRequestId = 0;
 
   async function loadItineraries(): Promise<void> {
     isLoading.value = true;
@@ -51,6 +61,52 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
     }
   }
 
+  async function findExactPublicItinerary(
+    criteria: ExactPublicItineraryCriteria,
+  ): Promise<Itinerary | null> {
+    const requestId = ++exactMatchRequestId;
+    isCheckingExactMatch.value = true;
+    error.value = null;
+    exactMatch.value = null;
+
+    try {
+      const candidates = await fetchPublicItineraries({
+        cityId: criteria.destinationId,
+        bookId: criteria.bookId,
+        transportationMode: criteria.transportationMode,
+      });
+      const match =
+        candidates.find(
+          (itinerary) =>
+            itinerary.destinationId === criteria.destinationId &&
+            itinerary.bookId === criteria.bookId &&
+            itinerary.durationDays === criteria.durationDays &&
+            itinerary.transportationMode === criteria.transportationMode,
+        ) ?? null;
+      if (requestId !== exactMatchRequestId) {
+        return null;
+      }
+      exactMatch.value = match;
+      return match;
+    } catch (caught) {
+      if (requestId === exactMatchRequestId) {
+        error.value =
+          caught instanceof Error ? caught.message : "Unable to check public itineraries.";
+      }
+      return null;
+    } finally {
+      if (requestId === exactMatchRequestId) {
+        isCheckingExactMatch.value = false;
+      }
+    }
+  }
+
+  function clearExactMatch(): void {
+    exactMatchRequestId += 1;
+    exactMatch.value = null;
+    isCheckingExactMatch.value = false;
+  }
+
   function clearSelectedItinerary(): void {
     selectedItinerary.value = null;
     error.value = null;
@@ -59,6 +115,7 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
   function reset(): void {
     itineraries.value = [];
     selectedItinerary.value = null;
+    clearExactMatch();
     isLoading.value = false;
     error.value = null;
   }
@@ -66,11 +123,15 @@ export const useItineraryRepositoryStore = defineStore("itineraryRepository", ()
   return {
     itineraries,
     selectedItinerary,
+    exactMatch,
+    isCheckingExactMatch,
     hasItineraries,
     isLoading,
     error,
     loadItineraries,
     loadItineraryDetail,
+    findExactPublicItinerary,
+    clearExactMatch,
     clearSelectedItinerary,
     reset,
   };
