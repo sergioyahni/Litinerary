@@ -205,6 +205,7 @@ describe("public itinerary planner handoff", () => {
       durationDays: 1,
       transportationMode: "walking",
     });
+    expect(mocks.generateItinerary).toHaveBeenCalledTimes(1);
     expect(mocks.router.push).toHaveBeenCalledWith({ name: "generated-itinerary" });
   });
 });

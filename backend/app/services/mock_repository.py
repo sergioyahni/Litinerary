@@ -121,7 +121,11 @@ def list_itineraries(
     if _use_database(db):
         if city_id is not None and db_repository.get_destination(db, city_id) is None:
             raise not_found("destination", city_id)
-        if book_id is not None and db_repository.get_book(db, book_id) is None:
+        if (
+            book_id is not None
+            and db_repository.get_book(db, book_id) is None
+            and not db_repository.has_public_itinerary_for_book(db, book_id)
+        ):
             raise not_found("book", book_id)
         return db_repository.list_itineraries(
             db,
@@ -133,8 +137,13 @@ def list_itineraries(
     if city_id is not None:
         get_destination(city_id, db=db)
 
-    if book_id is not None:
-        get_book(book_id, db=db)
+    if book_id is not None and not any(book.id == book_id for book in BOOKS):
+        has_public_snapshot = any(
+            item.bookId == book_id and _is_public_repository_itinerary(item)
+            for item in ITINERARIES
+        )
+        if not has_public_snapshot:
+            raise not_found("book", book_id)
 
     itineraries = [item for item in ITINERARIES if _is_public_repository_itinerary(item)]
 
