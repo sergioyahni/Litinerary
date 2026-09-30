@@ -3,6 +3,8 @@ from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.models import BookModel
+from app.schemas.domain import Itinerary
+from app.services import database_repository
 
 
 @pytest.fixture(autouse=True)
@@ -96,13 +98,30 @@ def test_authenticated_external_book_generation_publishes_repository_snapshot(
     after_count = db_session.scalar(select(func.count()).select_from(BookModel))
     assert after_count == before_count
 
+    filtered_by_book = client.get(
+        "/api/itineraries",
+        params={"book_id": "external-london-bleak-house"},
+    )
+    filtered_exact = client.get(
+        "/api/itineraries",
+        params={
+            "city_id": "london",
+            "book_id": "external-london-bleak-house",
+            "transportation_mode": "walking",
+        },
+    )
     public_books = client.get("/api/books", params={"city_id": "london", "q": "Bleak"})
     public_detail = client.get(f"/api/itineraries/{itinerary['id']}")
 
+    assert filtered_by_book.status_code == 200
+    assert [item["id"] for item in filtered_by_book.json()] == [itinerary["id"]]
+    assert filtered_exact.status_code == 200
+    assert [item["id"] for item in filtered_exact.json()] == [itinerary["id"]]
     assert public_books.status_code == 200
     assert {book["id"] for book in public_books.json()} == {"external-london-bleak-house"}
     assert public_detail.status_code == 200
     assert public_detail.json()["id"] == itinerary["id"]
+    assert db_session.get(BookModel, "external-london-bleak-house") is None
 
     reused = client.post(
         "/api/itinerary/generate",
@@ -117,6 +136,89 @@ def test_authenticated_external_book_generation_publishes_repository_snapshot(
     assert reused.status_code == 200
     assert reused.json()["matchedExisting"] is True
     assert reused.json()["sourceItineraryId"] == itinerary["id"]
+
+
+def test_external_book_filter_does_not_expose_non_public_snapshots(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    _enable_dev_auth(monkeypatch)
+    generated = client.post(
+        "/api/itinerary/generate",
+        headers=_auth_header("reader-a"),
+        json={
+            "destinationId": "london",
+            "bookId": "external-london-bleak-house",
+            "durationDays": 1,
+            "transportationMode": "walking",
+        },
+    )
+    assert generated.status_code == 200
+    public_itinerary = Itinerary.model_validate(generated.json()["itinerary"])
+
+    for visibility in ("private", "unlisted"):
+        non_public_itinerary = public_itinerary.model_copy(
+            update={
+                "id": f"{public_itinerary.id}-{visibility}",
+                "isPublic": False,
+                "visibility": visibility,
+            },
+            deep=True,
+        )
+        for day in non_public_itinerary.days:
+            day.id = f"{day.id}-{visibility}"
+            for stop in day.stops:
+                stop.id = f"{stop.id}-{visibility}"
+        database_repository.save_itinerary(
+            db_session,
+            non_public_itinerary,
+        )
+
+    filtered = client.get(
+        "/api/itineraries",
+        params={
+            "city_id": "london",
+            "book_id": "external-london-bleak-house",
+            "transportation_mode": "walking",
+        },
+    )
+
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()] == [public_itinerary.id]
+    assert db_session.get(BookModel, "external-london-bleak-house") is None
+
+
+def test_book_filter_preserves_repository_and_unknown_book_contract(client) -> None:
+    repository_book = client.get(
+        "/api/itineraries",
+        params={
+            "city_id": "london",
+            "book_id": "oliver-twist",
+            "transportation_mode": "walking",
+        },
+    )
+    repository_book_no_match = client.get(
+        "/api/itineraries",
+        params={
+            "city_id": "london",
+            "book_id": "oliver-twist",
+            "transportation_mode": "car_taxi",
+        },
+    )
+    unknown_book = client.get(
+        "/api/itineraries",
+        params={"book_id": "not-a-repository-or-snapshot-book"},
+    )
+
+    assert repository_book.status_code == 200
+    assert [item["id"] for item in repository_book.json()] == [
+        "it-london-oliver-twist-1-walking"
+    ]
+    assert repository_book_no_match.status_code == 200
+    assert repository_book_no_match.json() == []
+    assert unknown_book.status_code == 404
+    assert unknown_book.json()["detail"] == "Unknown book: not-a-repository-or-snapshot-book"
 
 
 def _enable_dev_auth(monkeypatch: pytest.MonkeyPatch) -> None:

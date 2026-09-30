@@ -138,6 +138,21 @@ def list_itineraries(
     return [itinerary_from_model(row) for row in rows]
 
 
+def has_public_itinerary_for_book(db: Session, book_id: str) -> bool:
+    return (
+        db.scalar(
+            select(ItineraryModel.id)
+            .where(
+                ItineraryModel.book_id == book_id,
+                ItineraryModel.is_public.is_(True),
+                ItineraryModel.visibility == "public",
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def find_exact_itinerary(
     db: Session,
     city_id: str,
