@@ -47,7 +47,10 @@ def test_mock_verification_low_confidence_for_unknown_candidate(client, monkeypa
     ).json()
     candidate_id = processed["candidates"][0]["id"]
 
-    response = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
+    response = client.post(
+        f"/api/admin/poi/verify-candidate/{candidate_id}",
+        headers=headers,
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -108,7 +111,9 @@ def test_candidate_promotion_carries_verification_metadata(client, db_session, m
     assert promoted.verified_name == seeded.name
 
 
-def test_unverified_and_mark_reviewed_endpoints(client, db_session) -> None:
+def test_unverified_and_mark_reviewed_endpoints(client, db_session, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     poi = POIModel(
         id="poi-needs-review",
         destination_id="london",
@@ -124,8 +129,11 @@ def test_unverified_and_mark_reviewed_endpoints(client, db_session) -> None:
     db_session.add(poi)
     db_session.commit()
 
-    unverified = client.get("/api/admin/poi/unverified")
-    reviewed = client.post("/api/admin/poi/poi-needs-review/mark-reviewed")
+    unverified = client.get("/api/admin/poi/unverified", headers=headers)
+    reviewed = client.post(
+        "/api/admin/poi/poi-needs-review/mark-reviewed",
+        headers=headers,
+    )
 
     assert unverified.status_code == 200
     assert "poi-needs-review" in {item["id"] for item in unverified.json()}

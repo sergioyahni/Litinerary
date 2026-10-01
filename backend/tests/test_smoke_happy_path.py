@@ -66,8 +66,8 @@ def test_backend_mvp_and_phase2_smoke_path(client) -> None:
 def test_backend_development_admin_smoke_path(client, monkeypatch) -> None:
     _enable_admin_auth(monkeypatch)
     headers = _admin_headers()
-    validation = client.get("/api/admin/seed/validate")
-    exported = client.get("/api/admin/seed/export")
+    validation = client.get("/api/admin/seed/validate", headers=headers)
+    exported = client.get("/api/admin/seed/export", headers=headers)
 
     assert validation.status_code == 200
     assert validation.json()["valid"] is True
@@ -93,8 +93,11 @@ def test_backend_development_admin_smoke_path(client, monkeypatch) -> None:
         headers=headers,
     )
     candidate_id = processed_job.json()["candidates"][0]["id"]
-    verified_candidate = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
-    unverified = client.get("/api/admin/poi/unverified")
+    verified_candidate = client.post(
+        f"/api/admin/poi/verify-candidate/{candidate_id}",
+        headers=headers,
+    )
+    unverified = client.get("/api/admin/poi/unverified", headers=headers)
 
     assert processed_job.status_code == 200
     assert processed_job.json()["status"] == "completed"

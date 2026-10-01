@@ -94,18 +94,17 @@ def test_development_admin_contract_shapes(client, monkeypatch) -> None:
         headers=headers,
     ).json()
     candidate_id = run["candidates"][0]["id"]
-    verified = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
-    seed_validation = client.get("/api/admin/seed/validate")
+    verified = client.post(
+        f"/api/admin/poi/verify-candidate/{candidate_id}",
+        headers=headers,
+    )
+    seed_validation = client.get("/api/admin/seed/validate", headers=headers)
 
     assert {"id", "bookId", "source", "status", "candidates", "artifacts"} <= run.keys()
     assert {"candidate", "verification"} <= verified.json().keys()
-    assert {
-        "status",
-        "provider",
-        "confidence",
-        "verifiedName",
-        "notes",
-    } <= verified.json()["verification"].keys()
+    assert {"status", "provider", "confidence", "verifiedName", "notes"} <= (
+        verified.json()["verification"].keys()
+    )
     assert {"valid", "errors", "warnings", "counts"} <= seed_validation.json().keys()
 
 
