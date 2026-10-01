@@ -5,13 +5,13 @@ from app.core.auth import CurrentUser, optional_current_user
 from app.core.database import get_db
 from app.core.observability import EventName, log_event
 from app.schemas.domain import (
-    Itinerary,
     ItineraryAdaptationRequest,
     ItineraryGenerationRequest,
     ItineraryGenerationResponse,
     TransportationMode,
 )
 from app.schemas.narration import ItineraryNarrationResponse, NarrationRequest
+from app.schemas.public_itinerary import PublicItinerary, project_public_itinerary
 from app.services.mock_repository import (
     adapt_itinerary,
     generate_itinerary,
@@ -85,28 +85,30 @@ def post_adapt_itinerary(
     return adapt_itinerary(request, db=db)
 
 
-@router.get("/api/itineraries", response_model=list[Itinerary])
+@router.get("/api/itineraries", response_model=list[PublicItinerary])
 def get_itineraries(
     city_id: str | None = None,
     book_id: str | None = None,
     transportation_mode: TransportationMode | None = None,
     db: Session = Depends(get_db),
-) -> list[Itinerary]:
-    return list_itineraries(
+) -> list[PublicItinerary]:
+    itineraries = list_itineraries(
         city_id=city_id,
         book_id=book_id,
         transportation_mode=transportation_mode,
         db=db,
     )
+    return [project_public_itinerary(itinerary) for itinerary in itineraries]
 
 
-@router.get("/api/itineraries/{itinerary_id}", response_model=Itinerary)
+@router.get("/api/itineraries/{itinerary_id}", response_model=PublicItinerary)
 def get_itinerary_by_id(
     itinerary_id: str,
     current_user: CurrentUser | None = Depends(optional_current_user),
     db: Session = Depends(get_db),
-) -> Itinerary:
-    return get_itinerary(itinerary_id, db=db, current_user=current_user)
+) -> PublicItinerary:
+    itinerary = get_itinerary(itinerary_id, db=db, current_user=current_user)
+    return project_public_itinerary(itinerary)
 
 
 @router.post(

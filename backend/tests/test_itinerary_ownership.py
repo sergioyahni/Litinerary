@@ -78,7 +78,12 @@ def test_private_itinerary_detail_and_narration_are_owner_or_admin_only(
     assert other_user.status_code == 404
     assert owner.status_code == 200
     assert owner.json()["id"] == private_id
-    assert owner.json()["ownerUserId"] == "reader-a"
+    assert "ownerUserId" not in owner.json()
+    assert "createdByUserId" not in owner.json()
+    persisted = database_repository.get_itinerary(db_session, private_id)
+    assert persisted is not None
+    assert persisted.ownerUserId == "reader-a"
+    assert persisted.createdByUserId == "reader-a"
     assert admin.status_code == 200
     assert owner_narration.status_code == 200
     assert owner_narration.json()["itineraryId"] == private_id
