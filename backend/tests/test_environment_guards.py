@@ -42,7 +42,7 @@ def test_admin_routes_are_blocked_in_production_by_default(client, monkeypatch) 
     assert "disabled" in response.json()["detail"]
 
 
-def test_non_destructive_admin_route_can_be_explicitly_enabled_in_production(
+def test_admin_routes_fail_closed_in_production_even_when_explicitly_enabled(
     client,
     monkeypatch,
 ) -> None:
@@ -52,10 +52,11 @@ def test_non_destructive_admin_route_can_be_explicitly_enabled_in_production(
 
     response = client.get("/api/admin/seed/validate")
 
-    assert response.status_code == 200
+    assert response.status_code == 403
+    assert "disabled" in response.json()["detail"]
 
 
-def test_destructive_seed_routes_are_blocked_in_production_even_when_admin_enabled(
+def test_seed_routes_are_blocked_in_production_even_when_admin_enabled(
     client,
     monkeypatch,
 ) -> None:
@@ -67,8 +68,81 @@ def test_destructive_seed_routes_are_blocked_in_production_even_when_admin_enabl
     export_response = client.get("/api/admin/seed/export")
 
     assert reset_response.status_code == 403
-    assert "Destructive" in reset_response.json()["detail"]
-    assert export_response.status_code == 200
+    assert "disabled" in reset_response.json()["detail"]
+    assert export_response.status_code == 403
+
+
+def test_production_rejects_admin_route_activation_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.delenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", raising=False)
+    get_settings.cache_clear()
+
+    errors = get_settings().deployed_auth_validation_errors()
+
+    assert "ENABLE_ADMIN_ROUTES must be false in deployed environments." in errors
+
+
+def test_broad_admin_routes_fail_closed_in_staging_even_when_forced(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "false")
+    get_settings.cache_clear()
+
+    seed_response = client.get("/api/admin/seed/validate")
+    ingestion_response = client.get("/api/admin/ingestion/itinerary-imports")
+
+    assert seed_response.status_code == 403
+    assert ingestion_response.status_code == 403
+    assert "ENABLE_ADMIN_ROUTES must be false in deployed environments." in (
+        get_settings().deployed_auth_validation_errors()
+    )
+
+
+def test_production_rejects_staging_ingestion_activation_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "false")
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "auth0")
+    get_settings.cache_clear()
+
+    errors = get_settings().deployed_auth_validation_errors()
+
+    assert any("allowed only when APP_ENV=staging" in error for error in errors)
+
+
+def test_ingestion_routes_remain_disabled_in_staging_without_opt_in(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "false")
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "false")
+    get_settings.cache_clear()
+
+    response = client.get("/api/admin/ingestion/itinerary-imports")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "Admin/development endpoints are disabled in this environment."
+    )
+
+
+def test_ingestion_routes_fail_closed_in_production_even_with_both_switches(
+    client,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "true")
+    get_settings.cache_clear()
+
+    response = client.get("/api/admin/ingestion/itinerary-imports")
+
+    assert response.status_code == 403
 
 
 def test_debug_routes_are_blocked_in_production_by_default(client, monkeypatch) -> None:

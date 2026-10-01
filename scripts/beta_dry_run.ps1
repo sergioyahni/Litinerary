@@ -56,6 +56,7 @@ function Set-BetaEnvironment {
   $env:APP_ENV = $Profile
   $env:DEBUG = "false"
   $env:ENABLE_ADMIN_ROUTES = "false"
+  $env:ENABLE_STAGING_ADMIN_INGESTION_ROUTES = "false"
   $env:ENABLE_DEBUG_ROUTES = "false"
   $env:ENABLE_MOCK_SERVICES = "true"
   $env:ENABLE_REAL_LLM = "false"
@@ -141,6 +142,7 @@ function Set-BackendTestEnvironment {
     "APP_ENV",
     "DEBUG",
     "ENABLE_ADMIN_ROUTES",
+    "ENABLE_STAGING_ADMIN_INGESTION_ROUTES",
     "ENABLE_DEBUG_ROUTES",
     "ENABLE_MOCK_SERVICES",
     "ENABLE_REAL_LLM",
@@ -186,6 +188,7 @@ function Set-FrontendEnvironment {
     "APP_ENV",
     "DEBUG",
     "ENABLE_ADMIN_ROUTES",
+    "ENABLE_STAGING_ADMIN_INGESTION_ROUTES",
     "ENABLE_DEBUG_ROUTES",
     "ENABLE_MOCK_SERVICES",
     "ENABLE_REAL_LLM",

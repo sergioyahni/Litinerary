@@ -453,6 +453,48 @@ def test_managed_admin_can_access_another_users_resource(
     assert response.json()["id"] == "managed-reader"
 
 
+def test_protected_staging_ingestion_requires_managed_admin(
+    client,
+    monkeypatch,
+    managed_auth_private_key,
+) -> None:
+    enable_managed_auth(monkeypatch, app_env="staging")
+    monkeypatch.setenv("AUTH_PROVIDER", "auth0")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "false")
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "true")
+    get_settings.cache_clear()
+    endpoint = "/api/admin/ingestion/itinerary-imports"
+
+    ordinary_token = make_managed_token(managed_auth_private_key)
+    admin_token = make_managed_token(
+        managed_auth_private_key,
+        sub="auth0|gate-b-admin",
+        roles=["user", "admin"],
+    )
+
+    anonymous = client.get(endpoint)
+    ordinary = client.get(
+        endpoint,
+        headers={"Authorization": f"Bearer {ordinary_token}"},
+    )
+    administrator = client.get(
+        endpoint,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert anonymous.status_code == 401
+    assert ordinary.status_code == 403
+    assert administrator.status_code == 200
+
+    monkeypatch.setenv("ENABLE_STAGING_ADMIN_INGESTION_ROUTES", "false")
+    get_settings.cache_clear()
+    disabled = client.get(
+        endpoint,
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert disabled.status_code == 403
+
+
 def test_malformed_authorization_header_is_rejected(client, monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_AUTH", "true")
     monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")

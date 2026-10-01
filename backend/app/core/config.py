@@ -17,6 +17,7 @@ class Settings(BaseModel):
     app_env: str = "development"
     debug: bool = True
     enable_admin_routes: bool = True
+    enable_staging_admin_ingestion_routes: bool = False
     enable_debug_routes: bool = True
     enable_mock_services: bool = True
     enable_real_llm: bool = False
@@ -142,10 +143,31 @@ class Settings(BaseModel):
         return normalize_database_url(self.database_url)
 
     def deployed_auth_validation_errors(self) -> list[str]:
-        if not self.is_deployed_environment:
-            return []
-
         errors: list[str] = []
+        if self.is_deployed_environment and self.enable_admin_routes:
+            errors.append("ENABLE_ADMIN_ROUTES must be false in deployed environments.")
+        if self.enable_staging_admin_ingestion_routes:
+            if self.app_env != "staging":
+                errors.append(
+                    "ENABLE_STAGING_ADMIN_INGESTION_ROUTES=true is allowed only when "
+                    "APP_ENV=staging."
+                )
+            if self.enable_admin_routes:
+                errors.append(
+                    "ENABLE_ADMIN_ROUTES must remain false when protected staging ingestion "
+                    "is enabled."
+                )
+            if self.auth_provider != "auth0":
+                errors.append(
+                    "AUTH_PROVIDER=auth0 is required when protected staging ingestion is enabled."
+                )
+            if not self.auth_roles_claim.strip():
+                errors.append(
+                    "AUTH_ROLES_CLAIM is required when protected staging ingestion is enabled."
+                )
+        if not self.is_deployed_environment:
+            return errors
+
         if not self.enable_auth:
             errors.append("ENABLE_AUTH=true is required in deployed environments.")
         if not self.auth_required_for_user_features:
@@ -440,6 +462,10 @@ def get_settings() -> Settings:
         app_env=app_env,
         debug=_env_bool("DEBUG", default_enabled),
         enable_admin_routes=_env_bool("ENABLE_ADMIN_ROUTES", default_enabled),
+        enable_staging_admin_ingestion_routes=_env_bool(
+            "ENABLE_STAGING_ADMIN_INGESTION_ROUTES",
+            False,
+        ),
         enable_debug_routes=_env_bool("ENABLE_DEBUG_ROUTES", default_enabled),
         enable_mock_services=_env_bool("ENABLE_MOCK_SERVICES", default_enabled),
         enable_real_llm=_env_bool("ENABLE_REAL_LLM", False),

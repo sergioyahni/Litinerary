@@ -20,6 +20,7 @@ $providerEnvNames = @(
   "NODE_ENV",
   "DEBUG",
   "ENABLE_ADMIN_ROUTES",
+  "ENABLE_STAGING_ADMIN_INGESTION_ROUTES",
   "ENABLE_DEBUG_ROUTES",
   "ENABLE_MOCK_SERVICES",
   "ENABLE_REAL_LLM",
@@ -137,6 +138,7 @@ function Set-OfflineProfileEnvironment {
   $env:APP_ENV = $Profile
   $env:DEBUG = if ($Profile -in @("development", "test")) { "true" } else { "false" }
   $env:ENABLE_ADMIN_ROUTES = if ($Profile -in @("development", "test")) { "true" } else { "false" }
+  $env:ENABLE_STAGING_ADMIN_INGESTION_ROUTES = "false"
   $env:ENABLE_DEBUG_ROUTES = if ($Profile -in @("development", "test")) { "true" } else { "false" }
   $env:ENABLE_MOCK_SERVICES = "true"
   $env:ENABLE_REAL_LLM = "false"

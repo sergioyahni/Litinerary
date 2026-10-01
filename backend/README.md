@@ -35,6 +35,7 @@ Recommended local values:
 $env:APP_ENV="development"
 $env:DEBUG="true"
 $env:ENABLE_ADMIN_ROUTES="true"
+$env:ENABLE_STAGING_ADMIN_INGESTION_ROUTES="false"
 $env:ENABLE_DEBUG_ROUTES="true"
 $env:ENABLE_MOCK_SERVICES="true"
 $env:ENABLE_STAGED_INTERNAL_LLM_TESTING="false"
@@ -56,7 +57,8 @@ Production expectations:
 - Set `APP_ENV=production`.
 - Set `DEBUG=false`.
 - Set explicit `CORS_ALLOWED_ORIGINS`; do not use `*`.
-- Leave `ENABLE_ADMIN_ROUTES=false` unless routes are protected by a separate deployment boundary.
+- Keep `ENABLE_ADMIN_ROUTES=false`; production startup validation rejects it and the request guard fails closed even if it is forced on.
+- Keep `ENABLE_STAGING_ADMIN_INGESTION_ROUTES=false`; that capability is valid only in staging.
 - Leave `ENABLE_DEBUG_ROUTES=false`.
 - Leave `ENABLE_MOCK_SERVICES=false` unless intentionally running a protected mock environment.
 - Leave all `ENABLE_REAL_*` provider flags disabled until the matching adapter contract tests, cost controls, secrets, and monitoring are in place.
@@ -68,7 +70,7 @@ Beta/staging dry-run expectations:
 
 - Set `APP_ENV=beta` or `APP_ENV=staging`.
 - Set `DEBUG=false`.
-- Set `ENABLE_ADMIN_ROUTES=false` and `ENABLE_DEBUG_ROUTES=false`.
+- Set `ENABLE_ADMIN_ROUTES=false`, `ENABLE_STAGING_ADMIN_INGESTION_ROUTES=false`, and `ENABLE_DEBUG_ROUTES=false` for the normal locked profile.
 - Keep `ENABLE_MOCK_SERVICES=true` for the current mock-only beta dry run.
 - Keep all real product provider flags disabled. `ALLOW_EXTERNAL_CALLS=true` is required for managed-auth JWKS/provider metadata validation only.
 - Use exact `CORS_ALLOWED_ORIGINS`.
@@ -152,7 +154,7 @@ Development-only admin endpoints:
 - `POST /api/admin/seed/import`
 - `GET /api/admin/seed/validate`
 
-These endpoints require `ENABLE_ADMIN_ROUTES=true`. The destructive reset/import endpoints are blocked whenever `APP_ENV=production`, even if admin routes are explicitly enabled. Prefer the CLI commands above for local seed/reset workflows.
+These endpoints require `ENABLE_ADMIN_ROUTES=true` in local/test environments. Broad admin routes are blocked in every deployed environment, even if the switch is forced on. Prefer the CLI commands above for local seed/reset workflows.
 
 ## Negative-Path and Security Tests
 
@@ -291,7 +293,7 @@ Development-only admin endpoints:
 - `POST /api/admin/ingestion/jobs/{job_id}/run`
 - `POST /api/admin/ingestion/candidates/{candidate_id}/promote`
 
-These routes require `ENABLE_ADMIN_ROUTES=true`.
+These routes require `ENABLE_ADMIN_ROUTES=true` in local/test environments. A controlled staging acceptance may instead use `ENABLE_STAGING_ADMIN_INGESTION_ROUTES=true`; this exposes only `/api/admin/ingestion/*`, still requires a managed Auth0 administrator, and leaves seed and POI admin routes disabled. Follow `docs/gate-b-staging-admin-activation.md` and restore the switch to `false` immediately afterward.
 
 Running a job uses deterministic mock extraction. It creates location candidates and processing artifacts, updates job status from `pending` to `processing` to `completed`, and stores extraction notes and warnings. Candidate promotion creates a POI linked to the source book and immediately runs mock verification. High-confidence local matches become `mock_verified`; lower-confidence or malformed candidates remain `needs_review` for manual development review.
 

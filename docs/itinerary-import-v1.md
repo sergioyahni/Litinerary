@@ -8,7 +8,7 @@ The administrative lifecycle is:
 
 `parse -> validate -> preview -> confirm -> persist -> verify -> publish`
 
-All endpoints are under `/api/admin/ingestion/itinerary-imports` and require both enabled admin routes and an authenticated administrator:
+All endpoints are under `/api/admin/ingestion/itinerary-imports` and require both an enabled ingestion-admin boundary and an authenticated administrator. Local/test uses `ENABLE_ADMIN_ROUTES`; controlled staging acceptance uses the narrower `ENABLE_STAGING_ADMIN_INGESTION_ROUTES` switch described in `gate-b-staging-admin-activation.md`:
 
 - `POST /api/admin/ingestion/itinerary-imports`: parse, validate, and store a dry-run preview.
 - `GET /api/admin/ingestion/itinerary-imports`: list import jobs.
