@@ -10,6 +10,28 @@ from app.models import BookModel, ItineraryImportRecordModel, ItineraryModel
 from app.services import database_repository
 
 
+_PUBLICLY_FORBIDDEN_KEYS = {
+    "artifactHash",
+    "batchSource",
+    "contractVersion",
+    "createdByMode",
+    "createdByUserId",
+    "generatedByService",
+    "importBatchIdentity",
+    "importContractVersion",
+    "importJobId",
+    "initiatedByUserId",
+    "manualReviewStatus",
+    "ownerUserId",
+    "providerRequestId",
+    "reviewedByUserId",
+    "sourceAttribution",
+    "sourceContentHash",
+    "stableSourceIdentity",
+    "subscriberOnly",
+}
+
+
 @pytest.fixture(autouse=True)
 def clear_settings_cache():
     get_settings.cache_clear()
@@ -110,9 +132,57 @@ def test_confirm_verify_publish_repository_book(
     publish = client.post(f"{endpoint}/{preview['id']}/publish", headers=_admin_headers())
     assert publish.status_code == 200
     assert publish.json()["status"] == "published"
-    assert client.get(f"/api/itineraries/{itinerary_id}").status_code == 200
-    listing = client.get("/api/itineraries", params={"book_id": "oliver-twist"})
-    assert itinerary_id in {item["id"] for item in listing.json()}
+    detail = client.get(f"/api/itineraries/{itinerary_id}")
+    listing = client.get("/api/itineraries")
+    filtered = client.get(
+        "/api/itineraries",
+        params={
+            "city_id": "london",
+            "book_id": "oliver-twist",
+            "transportation_mode": "walking",
+        },
+    )
+    assert detail.status_code == 200
+    assert listing.status_code == 200
+    assert filtered.status_code == 200
+
+    public_payloads = [
+        detail.json(),
+        next(item for item in listing.json() if item["id"] == itinerary_id),
+        next(item for item in filtered.json() if item["id"] == itinerary_id),
+    ]
+    for payload in public_payloads:
+        assert payload["id"] == itinerary_id
+        assert payload["title"] == "Gate B Controlled Oliver Twist Walk"
+        assert payload["isPublic"] is True
+        assert payload["visibility"] == "public"
+        assert payload["generatedFrom"] == "imported"
+        assert payload["sourceType"] == "corpus_import"
+        assert payload["days"]
+        public_poi = payload["days"][0]["stops"][0]["poi"]
+        assert "verificationProvider" in public_poi
+        assert "verificationNotes" in public_poi
+        assert "provenanceMetadata" in public_poi
+        exposed_internal_keys = _serialized_keys(payload) & _PUBLICLY_FORBIDDEN_KEYS
+        assert not exposed_internal_keys, exposed_internal_keys
+
+    persisted = database_repository.get_itinerary(db_session, itinerary_id)
+    assert persisted is not None
+    assert persisted.createdByMode == "admin"
+    assert persisted.createdByUserId == "gate-b-admin"
+    assert persisted.providerRequestId == preview["id"]
+    assert persisted.generatedByService == "itinerary_import_service"
+    assert persisted.provenanceMetadata["importJobId"] == preview["id"]
+    assert persisted.provenanceMetadata["sourceAttribution"]
+    assert persisted.provenanceMetadata["stableSourceIdentity"]
+
+    published_verification = client.get(
+        f"{endpoint}/{preview['id']}/verify",
+        headers=_admin_headers(),
+    )
+    assert published_verification.status_code == 200
+    assert published_verification.json()["verified"] is True
+    assert published_verification.json()["records"][0]["provenanceMatches"] is True
 
     audit = db_session.scalar(
         select(ItineraryImportRecordModel).where(
@@ -282,3 +352,15 @@ def _admin_headers() -> dict[str, str]:
 
 def _user_headers() -> dict[str, str]:
     return {"Authorization": "Bearer dev:gate-b-reader:user:none"}
+
+
+def _serialized_keys(value) -> set[str]:
+    if isinstance(value, dict):
+        return set(value) | {
+            key
+            for item in value.values()
+            for key in _serialized_keys(item)
+        }
+    if isinstance(value, list):
+        return {key for item in value for key in _serialized_keys(item)}
+    return set()

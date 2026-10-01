@@ -79,7 +79,10 @@ Development tokens are not acceptable evidence in staging.
 7. POST `/api/admin/ingestion/itinerary-imports/{job_id}/publish`. Verify the separate
    publication audit transition and public visibility.
 8. Without a token, verify direct detail, repository listing, destination/book filtering, and
-   the public DTO. Administrative audit fields must not appear in the public response.
+   the public DTO. `ownerUserId`, `createdByMode`, `createdByUserId`, `subscriberOnly`,
+   `providerRequestId`, `generatedByService`, stable import identity/content hash, import
+   batch/job/contract data, source attribution, and batch source must not appear anywhere in
+   the serialized public response. Admin verification must still report matching provenance.
 9. Recheck readiness/provider posture and confirm no unrelated `BookModel` or other canonical
    placeholder was created.
 

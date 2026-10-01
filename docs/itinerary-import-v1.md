@@ -100,6 +100,14 @@ Gate B uses the existing canonical visibility model:
 
 Persistence and publication are separate administrator actions. Only records whose contract intent is `publish` are eligible for publication. Anonymous repository APIs continue to expose only eligible `isPublic=true`, `visibility=public` itineraries.
 
+Public itinerary detail and list/filter endpoints serialize through a dedicated public DTO.
+They retain product-facing source/provider/book/destination provenance, but omit ownership,
+administrator creation, entitlement, provider-request, service-correlation, stable import
+identity, source hash, batch/job, source-attribution, import-contract audit metadata, and
+nested POI manual-review fields.
+The canonical itinerary and import audit tables retain those fields for verification,
+idempotency, history, and publication workflow.
+
 ## Transaction and failure semantics
 
 Persistence is **record-atomic with explicit partial-success reporting**. The audit row/job progress and canonical itinerary for a record are committed in the same SQLAlchemy session/transaction via the canonical persistence boundary. If the current record fails, that record is rolled back; previously committed records remain explicitly reported, the job becomes `persistence_failed`, and retry re-previews the batch. Already committed records become idempotent while the failed record is retried.
