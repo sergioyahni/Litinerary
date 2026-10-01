@@ -1,3 +1,8 @@
+import pytest
+
+from app.core.config import get_settings
+
+
 def test_public_contract_shapes(client) -> None:
     health = client.get("/api/health")
     destinations = client.get("/api/destinations")
@@ -73,15 +78,21 @@ def test_user_contract_shapes(client) -> None:
     assert {"userId", "itineraries"} <= bookmarks.json().keys()
 
 
-def test_development_admin_contract_shapes(client) -> None:
+def test_development_admin_contract_shapes(client, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     job = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": "oliver-twist",
             "source": {"sourceType": "metadata_only", "metadata": {}},
         },
     ).json()
-    run = client.post(f"/api/admin/ingestion/jobs/{job['id']}/run").json()
+    run = client.post(
+        f"/api/admin/ingestion/jobs/{job['id']}/run",
+        headers=headers,
+    ).json()
     candidate_id = run["candidates"][0]["id"]
     verified = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
     seed_validation = client.get("/api/admin/seed/validate")
@@ -96,3 +107,16 @@ def test_development_admin_contract_shapes(client) -> None:
         "notes",
     } <= verified.json()["verification"].keys()
     assert {"valid", "errors", "warnings", "counts"} <= seed_validation.json().keys()
+
+
+def _enable_admin_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+
+def _admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer dev:gate-b-admin:admin:none"}

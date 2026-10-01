@@ -82,7 +82,7 @@ def test_dry_run_is_non_mutating_and_rejects_unsafe_inputs(
     oversized["source"]["metadata"]["padding"] = "x" * 2_000_001
     response = client.post(endpoint, headers=_admin_headers(), json=oversized)
     assert response.status_code == 400
-    assert "2,000,000-byte" in response.json()["detail"]
+    assert "2000000-byte" in response.json()["detail"]
 
 
 def test_confirm_verify_publish_repository_book(

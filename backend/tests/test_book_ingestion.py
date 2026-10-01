@@ -123,9 +123,14 @@ def test_ingestion_candidate_can_be_promoted_to_poi(
     assert [book.id for book in poi.books] == ["oliver-twist"]
 
 
-def test_existing_itinerary_generation_still_works_after_ingestion_routes(client) -> None:
+def test_existing_itinerary_generation_still_works_after_ingestion_routes(
+    client,
+    monkeypatch,
+) -> None:
+    _enable_admin_auth(monkeypatch)
     response = client.post(
         "/api/itinerary/generate",
+        headers=_admin_headers(),
         json={
             "destinationId": "london",
             "bookId": "oliver-twist",

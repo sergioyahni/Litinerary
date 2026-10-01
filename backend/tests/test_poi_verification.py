@@ -1,3 +1,6 @@
+import pytest
+
+from app.core.config import get_settings
 from app.models import POIModel
 from app.services.poi_verification import MockPOIVerificationAdapter, PlaceSearchQuery
 
@@ -15,9 +18,12 @@ def test_mock_verification_success_for_seeded_poi(client, db_session) -> None:
     assert payload["poi"]["ticketingUrl"].startswith("https://example.test/tickets/")
 
 
-def test_mock_verification_low_confidence_for_unknown_candidate(client) -> None:
+def test_mock_verification_low_confidence_for_unknown_candidate(client, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     created = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": "oliver-twist",
             "source": {
@@ -35,7 +41,10 @@ def test_mock_verification_low_confidence_for_unknown_candidate(client) -> None:
             },
         },
     ).json()
-    processed = client.post(f"/api/admin/ingestion/jobs/{created['id']}/run").json()
+    processed = client.post(
+        f"/api/admin/ingestion/jobs/{created['id']}/run",
+        headers=headers,
+    ).json()
     candidate_id = processed["candidates"][0]["id"]
 
     response = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
@@ -56,10 +65,13 @@ def test_mock_adapter_rejects_missing_or_zero_coordinates() -> None:
     assert adapter.validate_coordinates(51.5, -0.1) is True
 
 
-def test_candidate_promotion_carries_verification_metadata(client, db_session) -> None:
+def test_candidate_promotion_carries_verification_metadata(client, db_session, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     seeded = db_session.scalars(db_session.query(POIModel).statement).first()
     created = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": seeded.books[0].id,
             "source": {
@@ -77,10 +89,16 @@ def test_candidate_promotion_carries_verification_metadata(client, db_session) -
             },
         },
     ).json()
-    processed = client.post(f"/api/admin/ingestion/jobs/{created['id']}/run").json()
+    processed = client.post(
+        f"/api/admin/ingestion/jobs/{created['id']}/run",
+        headers=headers,
+    ).json()
     candidate_id = processed["candidates"][0]["id"]
 
-    response = client.post(f"/api/admin/ingestion/candidates/{candidate_id}/promote")
+    response = client.post(
+        f"/api/admin/ingestion/candidates/{candidate_id}/promote",
+        headers=headers,
+    )
 
     assert response.status_code == 200
     promoted = db_session.get(POIModel, response.json()["poiId"])
@@ -126,3 +144,16 @@ def test_mock_search_is_deterministic(db_session) -> None:
     )
 
     assert adapter.search_places(db_session, query) == adapter.search_places(db_session, query)
+
+
+def _enable_admin_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+
+def _admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer dev:gate-b-admin:admin:none"}
