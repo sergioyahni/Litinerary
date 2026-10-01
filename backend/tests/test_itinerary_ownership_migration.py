@@ -110,7 +110,7 @@ def test_itinerary_ownership_migration_preserves_legacy_rows_and_reaches_head(
 
     with engine.begin() as connection:
         current_revision = connection.execute(text("SELECT version_num FROM alembic_version"))
-        assert current_revision.scalar_one() == "20260928_0010"
+        assert current_revision.scalar_one() == "20261001_0011"
         legacy = connection.execute(
             text(
                 """
@@ -193,6 +193,7 @@ def test_external_book_itinerary_blocks_downgrade_before_schema_mutation(
     engine = None
     try:
         command.upgrade(config, "head")
+        command.downgrade(config, "20260928_0010")
         engine = create_engine(database_url)
         assert not any(
             key["referred_table"] == "books" and key["constrained_columns"] == ["book_id"]

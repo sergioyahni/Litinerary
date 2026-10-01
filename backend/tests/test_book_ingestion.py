@@ -1,9 +1,18 @@
+import pytest
+
+from app.core.config import get_settings
 from app.models import POIModel
 
 
-def test_development_ingestion_job_can_be_created_listed_and_processed(client) -> None:
+def test_development_ingestion_job_can_be_created_listed_and_processed(
+    client,
+    monkeypatch,
+) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     create_response = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": "oliver-twist",
             "source": {
@@ -28,12 +37,18 @@ def test_development_ingestion_job_can_be_created_listed_and_processed(client) -
     assert created["status"] == "pending"
     assert created["source"]["sourceType"] == "manually_curated_location_list"
 
-    list_response = client.get("/api/admin/ingestion/jobs")
+    list_response = client.get("/api/admin/ingestion/jobs", headers=headers)
     assert list_response.status_code == 200
     assert created["id"] in {job["id"] for job in list_response.json()}
 
-    run_response = client.post(f"/api/admin/ingestion/jobs/{created['id']}/run")
-    detail_response = client.get(f"/api/admin/ingestion/jobs/{created['id']}")
+    run_response = client.post(
+        f"/api/admin/ingestion/jobs/{created['id']}/run",
+        headers=headers,
+    )
+    detail_response = client.get(
+        f"/api/admin/ingestion/jobs/{created['id']}",
+        headers=headers,
+    )
 
     assert run_response.status_code == 200
     processed = run_response.json()
@@ -45,9 +60,11 @@ def test_development_ingestion_job_can_be_created_listed_and_processed(client) -
     assert detail_response.json() == processed
 
 
-def test_ingestion_rejects_unsafe_full_text_metadata(client) -> None:
+def test_ingestion_rejects_unsafe_full_text_metadata(client, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
     response = client.post(
         "/api/admin/ingestion/jobs",
+        headers=_admin_headers(),
         json={
             "bookId": "oliver-twist",
             "source": {
@@ -61,9 +78,16 @@ def test_ingestion_rejects_unsafe_full_text_metadata(client) -> None:
     assert "full-text" in response.json()["detail"]
 
 
-def test_ingestion_candidate_can_be_promoted_to_poi(client, db_session) -> None:
+def test_ingestion_candidate_can_be_promoted_to_poi(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
     created = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": "oliver-twist",
             "source": {
@@ -76,11 +100,15 @@ def test_ingestion_candidate_can_be_promoted_to_poi(client, db_session) -> None:
             },
         },
     ).json()
-    processed = client.post(f"/api/admin/ingestion/jobs/{created['id']}/run").json()
+    processed = client.post(
+        f"/api/admin/ingestion/jobs/{created['id']}/run",
+        headers=headers,
+    ).json()
     candidate_id = processed["candidates"][0]["id"]
 
     promotion_response = client.post(
-        f"/api/admin/ingestion/candidates/{candidate_id}/promote"
+        f"/api/admin/ingestion/candidates/{candidate_id}/promote",
+        headers=headers,
     )
 
     assert promotion_response.status_code == 200
@@ -95,9 +123,14 @@ def test_ingestion_candidate_can_be_promoted_to_poi(client, db_session) -> None:
     assert [book.id for book in poi.books] == ["oliver-twist"]
 
 
-def test_existing_itinerary_generation_still_works_after_ingestion_routes(client) -> None:
+def test_existing_itinerary_generation_still_works_after_ingestion_routes(
+    client,
+    monkeypatch,
+) -> None:
+    _enable_admin_auth(monkeypatch)
     response = client.post(
         "/api/itinerary/generate",
+        headers=_admin_headers(),
         json={
             "destinationId": "london",
             "bookId": "oliver-twist",
@@ -108,3 +141,16 @@ def test_existing_itinerary_generation_still_works_after_ingestion_routes(client
 
     assert response.status_code == 200
     assert response.json()["matchedExisting"] is True
+
+
+def _enable_admin_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+
+def _admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer dev:gate-b-admin:admin:none"}

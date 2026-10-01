@@ -1,3 +1,8 @@
+import pytest
+
+from app.core.config import get_settings
+
+
 def test_backend_mvp_and_phase2_smoke_path(client) -> None:
     health = client.get("/api/health")
     destinations = client.get("/api/destinations")
@@ -58,9 +63,11 @@ def test_backend_mvp_and_phase2_smoke_path(client) -> None:
     assert review.json()["rating"] == 5
 
 
-def test_backend_development_admin_smoke_path(client) -> None:
-    validation = client.get("/api/admin/seed/validate")
-    exported = client.get("/api/admin/seed/export")
+def test_backend_development_admin_smoke_path(client, monkeypatch) -> None:
+    _enable_admin_auth(monkeypatch)
+    headers = _admin_headers()
+    validation = client.get("/api/admin/seed/validate", headers=headers)
+    exported = client.get("/api/admin/seed/export", headers=headers)
 
     assert validation.status_code == 200
     assert validation.json()["valid"] is True
@@ -69,6 +76,7 @@ def test_backend_development_admin_smoke_path(client) -> None:
 
     created_job = client.post(
         "/api/admin/ingestion/jobs",
+        headers=headers,
         json={
             "bookId": "oliver-twist",
             "source": {
@@ -80,13 +88,32 @@ def test_backend_development_admin_smoke_path(client) -> None:
     assert created_job.status_code == 201
 
     job_id = created_job.json()["id"]
-    processed_job = client.post(f"/api/admin/ingestion/jobs/{job_id}/run")
+    processed_job = client.post(
+        f"/api/admin/ingestion/jobs/{job_id}/run",
+        headers=headers,
+    )
     candidate_id = processed_job.json()["candidates"][0]["id"]
-    verified_candidate = client.post(f"/api/admin/poi/verify-candidate/{candidate_id}")
-    unverified = client.get("/api/admin/poi/unverified")
+    verified_candidate = client.post(
+        f"/api/admin/poi/verify-candidate/{candidate_id}",
+        headers=headers,
+    )
+    unverified = client.get("/api/admin/poi/unverified", headers=headers)
 
     assert processed_job.status_code == 200
     assert processed_job.json()["status"] == "completed"
     assert verified_candidate.status_code == 200
     assert "verification" in verified_candidate.json()
     assert unverified.status_code == 200
+
+
+def _enable_admin_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("ENABLE_ADMIN_ROUTES", "true")
+    monkeypatch.setenv("ENABLE_AUTH", "true")
+    monkeypatch.setenv("AUTH_PROVIDER", "dev")
+    monkeypatch.setenv("AUTH_ALLOW_DEV_USER_FALLBACK", "false")
+    get_settings.cache_clear()
+
+
+def _admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer dev:gate-b-admin:admin:none"}

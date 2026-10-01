@@ -21,6 +21,7 @@ from app.models.domain import (
     poi_books,
     user_bookmarks,
 )
+from app.models.imports import ItineraryImportJobModel, ItineraryImportRecordModel
 
 __all__ = [
     "BookModel",
@@ -34,6 +35,8 @@ __all__ = [
     "DestinationModel",
     "EmbeddingRecordModel",
     "ItineraryDayModel",
+    "ItineraryImportJobModel",
+    "ItineraryImportRecordModel",
     "ItineraryModel",
     "ItineraryStopModel",
     "POIModel",
