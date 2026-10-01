@@ -13,9 +13,9 @@ VerificationStatus = Literal[
     "needs_review",
     "rejected",
 ]
-GeneratedFrom = Literal["mock", "exact_match", "adapted", "new_generation"]
+GeneratedFrom = Literal["mock", "exact_match", "adapted", "new_generation", "imported"]
 ItinerarySourceType = Literal[
-    "exact_match", "adapted_match", "new_mock_generation"
+    "exact_match", "adapted_match", "new_mock_generation", "corpus_import"
 ]
 ItineraryVisibility = Literal["public", "private", "unlisted"]
 ItineraryCreatedByMode = Literal["anonymous", "registered_user", "subscriber", "admin", "seed"]

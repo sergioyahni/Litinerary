@@ -1,0 +1,76 @@
+{
+  "version": "litinerary-import/v1",
+  "batchIdentity": "gate-b-controlled-fixture-v1",
+  "source": {
+    "name": "Gate B controlled fixture",
+    "attribution": "Engineering fixture only; not the Gate C corpus.",
+    "metadata": {
+      "gate": "B",
+      "fixture": true
+    }
+  },
+  "records": [
+    {
+      "sourceIdentity": "gate-b-fixture:oliver-twist:london:walking:1d:v1",
+      "sourceAttribution": {
+        "fixture": "backend/tests/fixtures/itinerary_import_v1_valid.json"
+      },
+      "destination": {
+        "id": "london",
+        "name": "London",
+        "country": "United Kingdom",
+        "region": null,
+        "description": "A dense literary city of markets, courts, foggy streets, and river crossings.",
+        "latitude": 51.5072,
+        "longitude": -0.1276,
+        "imageUrl": "/src/assets/template/home/london.jpg"
+      },
+      "book": {
+        "semantics": "repository",
+        "id": "oliver-twist",
+        "title": "Oliver Twist",
+        "author": "Charles Dickens",
+        "description": "A classic novel whose London settings invite a walk through markets and old streets.",
+        "publicationYear": 1838,
+        "publicDomain": true,
+        "themes": [
+          "classic",
+          "urban",
+          "social history"
+        ],
+        "coverUrl": null,
+        "sourceType": "repository",
+        "providerId": null,
+        "provenanceMetadata": {}
+      },
+      "itinerary": {
+        "id": "it-import-gate-b-controlled-fixture",
+        "title": "Gate B Controlled Oliver Twist Walk",
+        "summary": "A controlled import fixture for the Gate B ingestion lifecycle.",
+        "durationDays": 1,
+        "transportationMode": "walking",
+        "days": [
+          {
+            "dayNumber": 1,
+            "title": "Controlled London route",
+            "summary": "A single-stop deterministic engineering fixture.",
+            "stops": [
+              {
+                "poiId": "smithfield-market",
+                "order": 1,
+                "title": "Smithfield Market",
+                "narrativeNote": "Controlled fixture stop referencing an existing canonical POI.",
+                "logisticsNote": "Engineering fixture only.",
+                "estimatedStartTime": "09:30",
+                "estimatedEndTime": "10:05"
+              }
+            ],
+            "estimatedDistanceKm": 0.0,
+            "estimatedDurationHours": 1.0
+          }
+        ]
+      },
+      "publicationIntent": "publish"
+    }
+  ]
+}
