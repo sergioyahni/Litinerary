@@ -265,7 +265,7 @@ def validate_auth_startup(settings: Settings | None = None) -> None:
     deployed_errors = resolved.deployed_auth_validation_errors()
     if deployed_errors:
         raise RuntimeError(
-            f"Deployed authentication configuration is incomplete for APP_ENV={resolved.app_env}: "
+            f"Deployed configuration is invalid for APP_ENV={resolved.app_env}: "
             + " ".join(deployed_errors)
         )
     if not resolved.enable_auth or resolved.auth_provider == "dev":

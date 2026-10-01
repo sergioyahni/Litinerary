@@ -15,12 +15,26 @@ def main() -> int:
         choices=["development", "test", "beta", "staging", "production"],
         default="beta",
     )
+    parser.add_argument(
+        "--allow-staging-admin-ingestion",
+        action="store_true",
+        help="Validate the explicit, Auth0-protected staging ingestion activation profile.",
+    )
     args = parser.parse_args()
     settings = get_settings()
     errors: list[str] = []
 
     if settings.app_env != args.profile:
         errors.append(f"APP_ENV is {settings.app_env!r}; expected {args.profile!r}.")
+
+    if args.allow_staging_admin_ingestion and args.profile != "staging":
+        errors.append("--allow-staging-admin-ingestion is valid only with --profile staging.")
+    if settings.enable_staging_admin_ingestion_routes != args.allow_staging_admin_ingestion:
+        expected = "true" if args.allow_staging_admin_ingestion else "false"
+        errors.append(
+            "ENABLE_STAGING_ADMIN_INGESTION_ROUTES must be "
+            f"{expected} for this validation mode."
+        )
 
     if args.profile in {"beta", "staging", "production"}:
         if settings.debug:
@@ -66,6 +80,7 @@ def main() -> int:
         "appEnv": settings.app_env,
         "debug": settings.debug,
         "adminRoutesEnabled": settings.enable_admin_routes,
+        "stagingAdminIngestionEnabled": settings.enable_staging_admin_ingestion_routes,
         "debugRoutesEnabled": settings.enable_debug_routes,
         "mockServicesEnabled": settings.enable_mock_services,
         "externalCallsAllowed": settings.allow_external_calls,

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import CurrentUser, require_admin_user
 from app.core.database import get_db
-from app.core.guards import require_admin_routes
+from app.core.guards import require_ingestion_admin_routes
 from app.schemas.ingestion import (
     BookIngestionJob,
     BookIngestionJobCreate,
@@ -21,7 +21,7 @@ from app.services.itinerary_import_service import itinerary_import_service
 router = APIRouter(
     prefix="/api/admin/ingestion",
     tags=["admin", "development", "book-ingestion", "itinerary-import"],
-    dependencies=[Depends(require_admin_routes), Depends(require_admin_user)],
+    dependencies=[Depends(require_ingestion_admin_routes), Depends(require_admin_user)],
 )
 
 

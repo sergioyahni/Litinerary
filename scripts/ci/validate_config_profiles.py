@@ -14,6 +14,7 @@ ENV_KEYS = {
     "APP_ENV",
     "DEBUG",
     "ENABLE_ADMIN_ROUTES",
+    "ENABLE_STAGING_ADMIN_INGESTION_ROUTES",
     "ENABLE_DEBUG_ROUTES",
     "ENABLE_MOCK_SERVICES",
     "ALLOW_EXTERNAL_CALLS",
@@ -83,6 +84,7 @@ DEPLOYED_COMMON = {
     **BASE_PROVIDER_LOCKS,
     "DEBUG": "false",
     "ENABLE_ADMIN_ROUTES": "false",
+    "ENABLE_STAGING_ADMIN_INGESTION_ROUTES": "false",
     "ENABLE_DEBUG_ROUTES": "false",
     "ALLOW_EXTERNAL_CALLS": "true",
     "ENABLE_AUTH": "true",
@@ -136,6 +138,13 @@ PROFILES = {
         "ENABLE_MOCK_SERVICES": "true",
         "EXTERNAL_CALL_ALLOWED_ENVIRONMENTS": "staging",
     },
+    "staging-admin-ingestion": {
+        **DEPLOYED_COMMON,
+        "APP_ENV": "staging",
+        "ENABLE_STAGING_ADMIN_INGESTION_ROUTES": "true",
+        "ENABLE_MOCK_SERVICES": "true",
+        "EXTERNAL_CALL_ALLOWED_ENVIRONMENTS": "staging",
+    },
     "production": {
         **DEPLOYED_COMMON,
         "APP_ENV": "production",
@@ -159,6 +168,7 @@ def main() -> int:
                 "authProvider": settings.auth_provider,
                 "databaseConfigured": settings.database_url_configured,
                 "durableUsage": settings.enable_durable_usage_controls,
+                "stagingAdminIngestion": settings.enable_staging_admin_ingestion_routes,
             }
         )
     print(json.dumps({"profiles": results, "errors": []}, indent=2, sort_keys=True))
@@ -173,9 +183,17 @@ def apply_env(values: Mapping[str, str]) -> None:
 
 
 def validate_profile(profile: str, settings, providers: list[dict]) -> None:
-    deployed = profile in {"staging", "production"}
-    if settings.app_env != profile:
+    expected_app_env = "staging" if profile == "staging-admin-ingestion" else profile
+    deployed = settings.is_deployed_environment
+    if settings.app_env != expected_app_env:
         raise SystemExit(f"{profile}: APP_ENV mismatch.")
+    if profile == "staging-admin-ingestion":
+        if not settings.enable_staging_admin_ingestion_routes:
+            raise SystemExit(f"{profile}: protected ingestion activation is required.")
+        if settings.enable_admin_routes:
+            raise SystemExit(f"{profile}: broad admin routes must remain disabled.")
+    elif settings.enable_staging_admin_ingestion_routes:
+        raise SystemExit(f"{profile}: protected staging ingestion must be disabled.")
     if deployed:
         errors = (
             settings.deployed_auth_validation_errors()

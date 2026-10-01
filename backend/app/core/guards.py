@@ -7,14 +7,39 @@ from app.core.observability import EventName, log_event
 
 def require_admin_routes() -> None:
     settings = get_settings()
+    allowed = settings.enable_admin_routes and settings.is_development_like
     log_event(
         EventName.ADMIN_ACTION_ATTEMPTED,
         category="admin",
         action="admin_route_access",
-        allowed=settings.enable_admin_routes,
+        allowed=allowed,
         app_env=settings.app_env,
     )
-    if settings.enable_admin_routes:
+    if allowed:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin/development endpoints are disabled in this environment.",
+    )
+
+
+def require_ingestion_admin_routes() -> None:
+    settings = get_settings()
+    allowed = (
+        settings.is_development_like and settings.enable_admin_routes
+        or (
+            settings.app_env == "staging"
+            and settings.enable_staging_admin_ingestion_routes
+        )
+    )
+    log_event(
+        EventName.ADMIN_ACTION_ATTEMPTED,
+        category="admin",
+        action="ingestion_admin_route_access",
+        allowed=allowed,
+        app_env=settings.app_env,
+    )
+    if allowed:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

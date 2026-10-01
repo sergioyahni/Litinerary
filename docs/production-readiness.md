@@ -25,7 +25,7 @@ Current related docs/modules:
 | `APP_ENV` | Set to `production`. |
 | `DEBUG` | Set to `false`. |
 | CORS | `CORS_ALLOWED_ORIGINS` must list exact frontend origins. No wildcard. |
-| Admin routes | `ENABLE_ADMIN_ROUTES=false` unless protected by authenticated admin and deployment boundary. |
+| Admin routes | `ENABLE_ADMIN_ROUTES=false` and `ENABLE_STAGING_ADMIN_INGESTION_ROUTES=false`; production startup and request guards reject activation. |
 | Debug routes | `ENABLE_DEBUG_ROUTES=false`. |
 | Mock services | `ENABLE_MOCK_SERVICES=false` unless running a protected mock environment. |
 | Provider feature flags | Keep `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS` false until each gate below passes. |

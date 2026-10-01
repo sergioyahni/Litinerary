@@ -56,7 +56,8 @@ Supported environment variables:
 
 - `APP_ENV`: `development`, `test`, `internal`, `beta`, `staging`, or `production`. Defaults to `development`. `internal` is reserved for staged internal testing and is not enabled by default.
 - `DEBUG`: defaults to `true` outside production and `false` in production.
-- `ENABLE_ADMIN_ROUTES`: enables `/api/admin/*` routes. Defaults to `true` outside production and `false` in production.
+- `ENABLE_ADMIN_ROUTES`: enables general `/api/admin/*` routes in local/test environments. Production rejects and fails closed if this is enabled.
+- `ENABLE_STAGING_ADMIN_INGESTION_ROUTES`: narrowly enables `/api/admin/ingestion/*` only when `APP_ENV=staging`, `ENABLE_ADMIN_ROUTES=false`, and managed Auth0 role enforcement is configured. It defaults to `false`, is invalid outside staging, and does not enable seed or POI administration.
 - `ENABLE_DEBUG_ROUTES`: enables development/debug routes such as `GET /api/users/{user_id}/recommendations/mock`. Defaults to `true` outside production and `false` in production.
 - `ENABLE_MOCK_SERVICES`: allows fake/mock AI, vector, and POI verification services. Defaults to `true` outside production and `false` in production.
 - Real provider feature flags: `ENABLE_REAL_LLM`, `ENABLE_REAL_VECTOR_DB`, `ENABLE_REAL_POI_PROVIDER`, `ENABLE_REAL_ROUTING`, `ENABLE_REAL_TICKETING`, `ENABLE_REAL_TTS`, and `ENABLE_AFFILIATE_LINKS`. All default to `false`.
@@ -66,7 +67,7 @@ Supported environment variables:
 - `CORS_ALLOWED_ORIGINS`: comma-separated frontend origins. Local default is `http://localhost:5173,http://127.0.0.1:5173`; production default is empty and wildcard origins are ignored.
 - Provider placeholders: `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_NAME`, `LLM_BASE_URL`, `VECTOR_DB_PROVIDER`, `VECTOR_DB_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `POI_PROVIDER`, `POI_VERIFICATION_PROVIDER`, `POI_PROVIDER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `POI_VERIFICATION_API_KEY`, `ROUTING_PROVIDER`, `ROUTING_API_KEY`, `OPENROUTESERVICE_API_KEY`, `TICKETING_PROVIDER`, `TICKETING_API_KEY`.
 
-Example local values are provided in `.env.example`. Production should set explicit frontend origins, disable admin/debug/mock routes unless intentionally operating a protected internal environment, and keep all provider credentials outside the repository.
+Example local values are provided in `.env.example`. Production must set explicit frontend origins, keep both admin switches and debug/mock routes disabled, and keep all provider credentials outside the repository.
 
 Environment templates are available for local, test, beta/staging, and production planning:
 

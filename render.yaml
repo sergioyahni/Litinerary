@@ -80,6 +80,8 @@ services:
         value: false
       - key: ENABLE_ADMIN_ROUTES
         value: false
+      - key: ENABLE_STAGING_ADMIN_INGESTION_ROUTES
+        value: false
       - key: ENABLE_DEBUG_ROUTES
         value: false
       - key: ENABLE_MOCK_SERVICES
@@ -203,6 +205,8 @@ services:
       - key: DEBUG
         value: false
       - key: ENABLE_ADMIN_ROUTES
+        value: false
+      - key: ENABLE_STAGING_ADMIN_INGESTION_ROUTES
         value: false
       - key: ENABLE_DEBUG_ROUTES
         value: false
