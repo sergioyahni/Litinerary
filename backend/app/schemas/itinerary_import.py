@@ -2,7 +2,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.domain import TransportationMode
+from app.schemas.domain import TransportationMode, VerificationStatus
 
 
 IMPORT_CONTRACT_VERSION = "litinerary-import/v1"
@@ -27,6 +27,35 @@ class ImportDestinationV1(ImportModel):
     latitude: float
     longitude: float
     imageUrl: str | None = Field(default=None, max_length=500)
+
+
+class ImportPOIV1(ImportModel):
+    id: str = Field(min_length=1, max_length=120)
+    destinationId: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(min_length=1)
+    latitude: float
+    longitude: float
+    address: str | None = Field(default=None, max_length=500)
+    estimatedDurationMinutes: int = Field(default=45, ge=1)
+    ticketingNote: str | None = None
+    literaryRelevance: str = Field(min_length=1)
+    verificationStatus: VerificationStatus = "unverified"
+    verificationProvider: str | None = Field(default=None, max_length=80)
+    providerVersion: str | None = Field(default=None, max_length=120)
+    providerRequestId: str | None = Field(default=None, max_length=180)
+    verificationConfidence: float | None = Field(default=None, ge=0, le=1)
+    verifiedName: str | None = Field(default=None, max_length=255)
+    verifiedAddress: str | None = Field(default=None, max_length=500)
+    verifiedLatitude: float | None = None
+    verifiedLongitude: float | None = None
+    openingHoursNote: str | None = None
+    ticketingUrl: str | None = Field(default=None, max_length=500)
+    verificationNotes: list[str] = Field(default_factory=list)
+    lastVerifiedAt: str | None = Field(default=None, max_length=80)
+    manualReviewStatus: str = Field(default="not_reviewed", max_length=40)
+    repositoryBookIds: list[str] = Field(default_factory=list)
+    provenanceMetadata: dict = Field(default_factory=dict)
 
 
 class ImportBookV1(ImportModel):
@@ -85,13 +114,38 @@ class ItineraryImportBatchV1(ImportModel):
     version: Literal["litinerary-import/v1"]
     batchIdentity: str = Field(min_length=1, max_length=180)
     source: ImportSourceV1
+    pois: list[ImportPOIV1] = Field(default_factory=list, max_length=1000)
     records: list[ItineraryImportRecordV1] = Field(min_length=1, max_length=500)
 
     @model_validator(mode="after")
-    def source_identities_are_unique(self) -> Self:
+    def identities_and_catalog_are_consistent(self) -> Self:
         identities = [record.sourceIdentity for record in self.records]
         if len(identities) != len(set(identities)):
             raise ValueError("records must use unique sourceIdentity values within a batch.")
+
+        poi_ids = [poi.id for poi in self.pois]
+        if len(poi_ids) != len(set(poi_ids)):
+            raise ValueError("pois must use unique id values within a batch.")
+
+        destinations: dict[str, dict] = {}
+        for record in self.records:
+            value = record.destination.model_dump(mode="json")
+            prior = destinations.setdefault(record.destination.id, value)
+            if prior != value:
+                raise ValueError(
+                    "records using the same destination id must use identical destination snapshots."
+                )
+
+        destination_ids = set(destinations)
+        for poi in self.pois:
+            if poi.destinationId not in destination_ids:
+                raise ValueError(
+                    f"POI '{poi.id}' references destination '{poi.destinationId}' not used by any record."
+                )
+            if len(poi.repositoryBookIds) != len(set(poi.repositoryBookIds)):
+                raise ValueError(
+                    f"POI '{poi.id}' must use unique repositoryBookIds values."
+                )
         return self
 
 
@@ -114,6 +168,7 @@ class ImportPreviewSummary(ImportModel):
     conflicts: int
     warnings: int
     projectedMutations: int
+    projectedCatalogMutations: int = 0
     publicationIntentCount: int
     records: list[ImportRecordPreview]
 
