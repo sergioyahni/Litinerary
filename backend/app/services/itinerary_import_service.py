@@ -17,9 +17,11 @@ from app.models import (
     ItineraryModel,
     POIModel,
 )
-from app.schemas.domain import Itinerary, ItineraryDay, ItineraryStop
+from app.schemas.domain import Itinerary, ItineraryDay, ItineraryStop, POI
 from app.schemas.itinerary_import import (
     IMPORT_CONTRACT_VERSION,
+    ImportDestinationV1,
+    ImportPOIV1,
     ImportPreviewSummary,
     ImportRecordPreview,
     ImportVerificationRecord,
@@ -78,7 +80,7 @@ class ItineraryImportService:
             self._preview_record(db, job.id, batch, record, admin=admin)
             for record in batch.records
         ]
-        summary = _preview_summary(previews)
+        summary = _preview_summary(db, batch, previews)
         job.preview_json = summary.model_dump(mode="json")
         db.add(job)
         db.commit()
@@ -94,6 +96,7 @@ class ItineraryImportService:
             valid_records=summary.validRecords,
             invalid_records=summary.invalidRecords,
             conflict_records=summary.conflicts,
+            projected_catalog_mutations=summary.projectedCatalogMutations,
         )
         return _job_response(job)
 
@@ -131,7 +134,7 @@ class ItineraryImportService:
             self._preview_record(db, job.id, batch, record, admin=admin)
             for record in batch.records
         ]
-        summary = _preview_summary(previews)
+        summary = _preview_summary(db, batch, previews)
         job.preview_json = summary.model_dump(mode="json")
         job.updated_at = _now()
 
@@ -153,6 +156,21 @@ class ItineraryImportService:
 
         persisted_ids = list(job.persisted_itinerary_ids or [])
         failures: list[dict[str, str]] = []
+        try:
+            _persist_catalog(db, batch)
+        except Exception as exc:
+            db.rollback()
+            job = _get_job(db, job.id)
+            job.status = "persistence_failed"
+            job.updated_at = _now()
+            job.error_json = {
+                "persistenceFailures": [
+                    {"sourceIdentity": "catalog", "errorType": exc.__class__.__name__}
+                ]
+            }
+            db.commit()
+            return _job_response(job)
+
         for record, preview in zip(batch.records, previews, strict=True):
             if preview.outcome == "already_imported":
                 if preview.projectedItineraryId and preview.projectedItineraryId not in persisted_ids:
@@ -167,6 +185,7 @@ class ItineraryImportService:
                     record,
                     preview,
                     admin=admin,
+                    allow_projected_catalog=False,
                 )
                 audit_record = ItineraryImportRecordModel(
                     id=f"import-record-{uuid4().hex}",
@@ -397,8 +416,19 @@ class ItineraryImportService:
         *,
         admin: CurrentUser,
     ) -> ImportRecordPreview:
-        content_hash = _record_hash(record)
+        content_hash = _record_hash(batch, record)
         projected_id = record.itinerary.id or _deterministic_itinerary_id(record.sourceIdentity)
+        errors = _catalog_errors_for_record(db, batch, record)
+        if errors:
+            return ImportRecordPreview(
+                sourceIdentity=record.sourceIdentity,
+                outcome="invalid",
+                contentHash=content_hash,
+                projectedItineraryId=projected_id,
+                publicationIntent=record.publicationIntent,
+                errors=errors,
+            )
+
         existing_record = db.scalar(
             select(ItineraryImportRecordModel).where(
                 ItineraryImportRecordModel.source_identity == record.sourceIdentity
@@ -425,7 +455,6 @@ class ItineraryImportService:
                 ),
             )
 
-        errors: list[str] = []
         warnings: list[str] = []
         existing_itinerary = db.get(ItineraryModel, projected_id)
         if existing_itinerary is not None:
@@ -447,9 +476,9 @@ class ItineraryImportService:
                     publicationIntent=record.publicationIntent,
                 ),
                 admin=admin,
+                allow_projected_catalog=True,
             )
             database_repository.validate_itinerary_access_invariants(db, itinerary)
-            database_repository.validate_itinerary_persistence_references(db, itinerary)
         except Exception as exc:
             errors.append(str(exc))
 
@@ -478,9 +507,10 @@ class ItineraryImportService:
         preview: ImportRecordPreview,
         *,
         admin: CurrentUser,
+        allow_projected_catalog: bool,
     ) -> Itinerary:
         destination = db.get(DestinationModel, record.destination.id)
-        if destination is None:
+        if destination is None and not allow_projected_catalog:
             raise ValueError(f"Unknown itinerary destination: {record.destination.id}")
 
         book = db.scalars(
@@ -510,6 +540,7 @@ class ItineraryImportService:
         itinerary_id = preview.projectedItineraryId or _deterministic_itinerary_id(
             record.sourceIdentity
         )
+        poi_catalog = {poi.id: poi for poi in batch.pois}
         days: list[ItineraryDay] = []
         for day in record.itinerary.days:
             orders = [stop.order for stop in day.stops]
@@ -524,22 +555,34 @@ class ItineraryImportService:
                     .where(POIModel.id == stop.poiId)
                     .options(selectinload(POIModel.books))
                 ).first()
-                if poi is None:
-                    raise ValueError(f"Unknown itinerary POI: {stop.poiId}")
-                if poi.destination_id != record.destination.id:
-                    raise ValueError(
-                        f"POI '{stop.poiId}' is outside destination '{record.destination.id}'."
-                    )
-                if book is not None and record.book.id not in {
-                    item.id for item in poi.books
-                }:
-                    raise ValueError(
-                        f"POI '{stop.poiId}' is not linked to repository book '{record.book.id}'."
-                    )
+                if poi is not None:
+                    if poi.destination_id != record.destination.id:
+                        raise ValueError(
+                            f"POI '{stop.poiId}' is outside destination '{record.destination.id}'."
+                        )
+                    poi_book_ids = {item.id for item in poi.books}
+                    if book is not None and record.book.id not in poi_book_ids:
+                        raise ValueError(
+                            f"POI '{stop.poiId}' is not linked to repository book '{record.book.id}'."
+                        )
+                    poi_schema = database_repository.poi_from_model(poi)
+                else:
+                    imported_poi = poi_catalog.get(stop.poiId)
+                    if imported_poi is None or not allow_projected_catalog:
+                        raise ValueError(f"Unknown itinerary POI: {stop.poiId}")
+                    if imported_poi.destinationId != record.destination.id:
+                        raise ValueError(
+                            f"POI '{stop.poiId}' is outside destination '{record.destination.id}'."
+                        )
+                    if book is not None and record.book.id not in imported_poi.repositoryBookIds:
+                        raise ValueError(
+                            f"POI '{stop.poiId}' is not linked to repository book '{record.book.id}'."
+                        )
+                    poi_schema = _poi_schema_from_import(imported_poi)
                 stops.append(
                     ItineraryStop(
                         id=f"{itinerary_id}-d{day.dayNumber}-s{stop.order}",
-                        poi=database_repository.poi_from_model(poi),
+                        poi=poi_schema,
                         order=stop.order,
                         title=stop.title,
                         narrativeNote=stop.narrativeNote,
@@ -579,6 +622,21 @@ class ItineraryImportService:
             "sourceAttribution": record.sourceAttribution,
             "batchSource": batch.source.model_dump(mode="json"),
         }
+        destination_name = destination.name if destination is not None else record.destination.name
+        destination_country = destination.country if destination is not None else record.destination.country
+        destination_region = destination.region if destination is not None else record.destination.region
+        destination_description = (
+            destination.description if destination is not None else record.destination.description
+        )
+        destination_latitude = (
+            destination.latitude if destination is not None else record.destination.latitude
+        )
+        destination_longitude = (
+            destination.longitude if destination is not None else record.destination.longitude
+        )
+        destination_image_url = (
+            destination.image_url if destination is not None else record.destination.imageUrl
+        )
         return Itinerary(
             id=itinerary_id,
             destinationId=record.destination.id,
@@ -628,29 +686,283 @@ class ItineraryImportService:
                     "importContractVersion": IMPORT_CONTRACT_VERSION,
                 }
             ),
-            destinationName=destination.name,
-            destinationCountry=destination.country,
-            destinationRegion=destination.region,
-            destinationDescription=destination.description,
-            destinationLatitude=destination.latitude,
-            destinationLongitude=destination.longitude,
-            destinationImageUrl=destination.image_url,
+            destinationName=destination_name,
+            destinationCountry=destination_country,
+            destinationRegion=destination_region,
+            destinationDescription=destination_description,
+            destinationLatitude=destination_latitude,
+            destinationLongitude=destination_longitude,
+            destinationImageUrl=destination_image_url,
             destinationSourceType="repository",
             destinationProviderId=None,
             destinationProvenanceMetadata={},
         )
 
 
-def _preview_summary(records: list[ImportRecordPreview]) -> ImportPreviewSummary:
+def _catalog_errors_for_record(
+    db: Session,
+    batch: ItineraryImportBatchV1,
+    record: ItineraryImportRecordV1,
+) -> list[str]:
+    errors: list[str] = []
+    destination = db.get(DestinationModel, record.destination.id)
+    if destination is not None and not _destination_matches_import(destination, record.destination):
+        errors.append(
+            f"Canonical destination '{record.destination.id}' differs from the import snapshot."
+        )
+
+    book = db.scalars(
+        select(BookModel)
+        .where(BookModel.id == record.book.id)
+        .options(selectinload(BookModel.destinations))
+    ).first()
+    if record.book.semantics == "repository":
+        if book is None:
+            errors.append(f"Unknown repository book: {record.book.id}")
+        elif record.destination.id not in {item.id for item in book.destinations}:
+            errors.append(
+                f"Repository book '{record.book.id}' is not linked to destination '{record.destination.id}'."
+            )
+    elif book is not None:
+        errors.append(
+            f"External snapshot identity conflicts with repository book: {record.book.id}"
+        )
+
+    poi_catalog = {poi.id: poi for poi in batch.pois}
+    referenced_poi_ids = {
+        stop.poiId
+        for day in record.itinerary.days
+        for stop in day.stops
+    }
+    for poi_id in sorted(referenced_poi_ids):
+        imported_poi = poi_catalog.get(poi_id)
+        poi = db.scalars(
+            select(POIModel)
+            .where(POIModel.id == poi_id)
+            .options(selectinload(POIModel.books))
+        ).first()
+        if poi is not None:
+            if poi.destination_id != record.destination.id:
+                errors.append(
+                    f"POI '{poi_id}' is outside destination '{record.destination.id}'."
+                )
+            if imported_poi is not None and not _poi_matches_import(poi, imported_poi):
+                errors.append(f"Canonical POI '{poi_id}' differs from the import catalog snapshot.")
+            existing_book_ids = {item.id for item in poi.books}
+            if imported_poi is not None and not set(imported_poi.repositoryBookIds).issubset(existing_book_ids):
+                errors.append(
+                    f"Canonical POI '{poi_id}' is missing one or more declared repository book links."
+                )
+            if record.book.semantics == "repository" and record.book.id not in existing_book_ids:
+                errors.append(
+                    f"POI '{poi_id}' is not linked to repository book '{record.book.id}'."
+                )
+            continue
+
+        if imported_poi is None:
+            errors.append(f"Unknown itinerary POI: {poi_id}")
+            continue
+        if imported_poi.destinationId != record.destination.id:
+            errors.append(
+                f"POI '{poi_id}' is outside destination '{record.destination.id}'."
+            )
+        if record.book.semantics == "repository" and record.book.id not in imported_poi.repositoryBookIds:
+            errors.append(
+                f"POI '{poi_id}' is not linked to repository book '{record.book.id}'."
+            )
+        for book_id in imported_poi.repositoryBookIds:
+            linked_book = db.scalars(
+                select(BookModel)
+                .where(BookModel.id == book_id)
+                .options(selectinload(BookModel.destinations))
+            ).first()
+            if linked_book is None:
+                errors.append(
+                    f"POI '{poi_id}' declares unknown repository book '{book_id}'."
+                )
+            elif imported_poi.destinationId not in {item.id for item in linked_book.destinations}:
+                errors.append(
+                    f"POI '{poi_id}' declares repository book '{book_id}' outside destination "
+                    f"'{imported_poi.destinationId}'."
+                )
+    return errors
+
+
+def _persist_catalog(db: Session, batch: ItineraryImportBatchV1) -> None:
+    destinations = {record.destination.id: record.destination for record in batch.records}
+    referenced_poi_ids = {
+        stop.poiId
+        for record in batch.records
+        for day in record.itinerary.days
+        for stop in day.stops
+    }
+    poi_catalog = {poi.id: poi for poi in batch.pois if poi.id in referenced_poi_ids}
+
+    for imported_destination in destinations.values():
+        if db.get(DestinationModel, imported_destination.id) is not None:
+            continue
+        db.add(
+            DestinationModel(
+                id=imported_destination.id,
+                name=imported_destination.name,
+                country=imported_destination.country,
+                region=imported_destination.region,
+                description=imported_destination.description,
+                latitude=imported_destination.latitude,
+                longitude=imported_destination.longitude,
+                image_url=imported_destination.imageUrl,
+                supported=True,
+            )
+        )
+    db.flush()
+
+    for imported_poi in poi_catalog.values():
+        if db.get(POIModel, imported_poi.id) is not None:
+            continue
+        books = [db.get(BookModel, book_id) for book_id in imported_poi.repositoryBookIds]
+        if any(book is None for book in books):
+            raise ValueError(f"POI '{imported_poi.id}' declares an unknown repository book.")
+        db.add(
+            POIModel(
+                id=imported_poi.id,
+                destination_id=imported_poi.destinationId,
+                name=imported_poi.name,
+                description=imported_poi.description,
+                latitude=imported_poi.latitude,
+                longitude=imported_poi.longitude,
+                address=imported_poi.address,
+                estimated_duration_minutes=imported_poi.estimatedDurationMinutes,
+                ticketing_note=imported_poi.ticketingNote,
+                literary_relevance=imported_poi.literaryRelevance,
+                verification_status=imported_poi.verificationStatus,
+                verification_provider=imported_poi.verificationProvider,
+                provider_version=imported_poi.providerVersion,
+                provider_request_id=imported_poi.providerRequestId,
+                verification_confidence=imported_poi.verificationConfidence,
+                verified_name=imported_poi.verifiedName,
+                verified_address=imported_poi.verifiedAddress,
+                verified_latitude=imported_poi.verifiedLatitude,
+                verified_longitude=imported_poi.verifiedLongitude,
+                opening_hours_note=imported_poi.openingHoursNote,
+                ticketing_url=imported_poi.ticketingUrl,
+                verification_notes=imported_poi.verificationNotes,
+                last_verified_at=imported_poi.lastVerifiedAt,
+                manual_review_status=imported_poi.manualReviewStatus,
+                reviewed_by_user_id=None,
+                provenance_metadata=imported_poi.provenanceMetadata,
+                books=[book for book in books if book is not None],
+            )
+        )
+    db.flush()
+
+
+def _destination_matches_import(row: DestinationModel, imported: ImportDestinationV1) -> bool:
+    return (
+        row.name == imported.name
+        and row.country == imported.country
+        and row.region == imported.region
+        and row.description == imported.description
+        and row.latitude == imported.latitude
+        and row.longitude == imported.longitude
+        and row.image_url == imported.imageUrl
+    )
+
+
+def _poi_matches_import(row: POIModel, imported: ImportPOIV1) -> bool:
+    return (
+        row.destination_id == imported.destinationId
+        and row.name == imported.name
+        and row.description == imported.description
+        and row.latitude == imported.latitude
+        and row.longitude == imported.longitude
+        and row.address == imported.address
+        and row.estimated_duration_minutes == imported.estimatedDurationMinutes
+        and row.ticketing_note == imported.ticketingNote
+        and row.literary_relevance == imported.literaryRelevance
+        and row.verification_status == imported.verificationStatus
+        and row.verification_provider == imported.verificationProvider
+        and row.provider_version == imported.providerVersion
+        and row.provider_request_id == imported.providerRequestId
+        and row.verification_confidence == imported.verificationConfidence
+        and row.verified_name == imported.verifiedName
+        and row.verified_address == imported.verifiedAddress
+        and row.verified_latitude == imported.verifiedLatitude
+        and row.verified_longitude == imported.verifiedLongitude
+        and row.opening_hours_note == imported.openingHoursNote
+        and row.ticketing_url == imported.ticketingUrl
+        and (row.verification_notes or []) == imported.verificationNotes
+        and row.last_verified_at == imported.lastVerifiedAt
+        and row.manual_review_status == imported.manualReviewStatus
+        and (row.provenance_metadata or {}) == imported.provenanceMetadata
+    )
+
+
+def _poi_schema_from_import(imported: ImportPOIV1) -> POI:
+    return POI(
+        id=imported.id,
+        destinationId=imported.destinationId,
+        bookIds=imported.repositoryBookIds,
+        name=imported.name,
+        description=imported.description,
+        latitude=imported.latitude,
+        longitude=imported.longitude,
+        address=imported.address,
+        estimatedDurationMinutes=imported.estimatedDurationMinutes,
+        ticketingNote=imported.ticketingNote,
+        literaryRelevance=imported.literaryRelevance,
+        verificationStatus=imported.verificationStatus,
+        verificationProvider=imported.verificationProvider,
+        providerVersion=imported.providerVersion,
+        providerRequestId=imported.providerRequestId,
+        verificationConfidence=imported.verificationConfidence,
+        verifiedName=imported.verifiedName,
+        verifiedAddress=imported.verifiedAddress,
+        verifiedLatitude=imported.verifiedLatitude,
+        verifiedLongitude=imported.verifiedLongitude,
+        openingHoursNote=imported.openingHoursNote,
+        ticketingUrl=imported.ticketingUrl,
+        verificationNotes=imported.verificationNotes,
+        lastVerifiedAt=imported.lastVerifiedAt,
+        manualReviewStatus=imported.manualReviewStatus,
+        reviewedByUserId=None,
+        provenanceMetadata=imported.provenanceMetadata,
+    )
+
+
+def _preview_summary(
+    db: Session,
+    batch: ItineraryImportBatchV1,
+    records: list[ImportRecordPreview],
+) -> ImportPreviewSummary:
+    new_record_count = sum(item.outcome == "new" for item in records)
+    referenced_destination_ids = {
+        record.destination.id
+        for record, preview in zip(batch.records, records, strict=True)
+        if preview.outcome == "new"
+    }
+    referenced_poi_ids = {
+        stop.poiId
+        for record, preview in zip(batch.records, records, strict=True)
+        if preview.outcome == "new"
+        for day in record.itinerary.days
+        for stop in day.stops
+    }
+    destination_creates = sum(
+        db.get(DestinationModel, destination_id) is None
+        for destination_id in referenced_destination_ids
+    )
+    poi_creates = sum(db.get(POIModel, poi_id) is None for poi_id in referenced_poi_ids)
+    catalog_mutations = destination_creates + poi_creates
     return ImportPreviewSummary(
         totalRecords=len(records),
         validRecords=sum(item.outcome in {"new", "already_imported"} for item in records),
         invalidRecords=sum(item.outcome == "invalid" for item in records),
-        newRecords=sum(item.outcome == "new" for item in records),
+        newRecords=new_record_count,
         alreadyImportedRecords=sum(item.outcome == "already_imported" for item in records),
         conflicts=sum(item.outcome == "conflict" for item in records),
         warnings=sum(len(item.warnings) for item in records),
-        projectedMutations=sum(item.outcome == "new" for item in records),
+        projectedMutations=new_record_count + catalog_mutations,
+        projectedCatalogMutations=catalog_mutations,
         publicationIntentCount=sum(
             item.publicationIntent == "publish" for item in records
         ),
@@ -689,10 +1001,20 @@ def _get_job(db: Session, job_id: str) -> ItineraryImportJobModel:
     return job
 
 
-def _record_hash(record: ItineraryImportRecordV1) -> str:
-    return sha256(
-        _canonical_json(record.model_dump(mode="json")).encode("utf-8")
-    ).hexdigest()
+def _record_hash(batch: ItineraryImportBatchV1, record: ItineraryImportRecordV1) -> str:
+    referenced_poi_ids = {
+        stop.poiId
+        for day in record.itinerary.days
+        for stop in day.stops
+    }
+    catalog = [
+        poi.model_dump(mode="json")
+        for poi in sorted(batch.pois, key=lambda item: item.id)
+        if poi.id in referenced_poi_ids
+    ]
+    record_json = record.model_dump(mode="json")
+    payload = record_json if not catalog else {"record": record_json, "pois": catalog}
+    return sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 def _canonical_json(value: dict) -> str:
